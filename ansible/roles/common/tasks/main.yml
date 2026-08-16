@@ -10,23 +10,24 @@
 - name: Clean stale apt locks and ensure remote tmp directory
   ansible.builtin.shell: |
     rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
+    rm -f /etc/apt/sources.list.d/docker.list || true
     mkdir -p /home/ubuntu/.ansible/tmp
     chmod 700 /home/ubuntu/.ansible/tmp
   changed_when: false
 
-- name: Download Docker official GPG key
+- name: Create apt keyrings directory structure
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download Docker official cryptographic GPG key
   ansible.builtin.get_url:
     url: https://docker.com
     dest: /etc/apt/keyrings/docker.asc
     mode: '0644'
 
-- name: Download Docker official GPG key
-  ansible.builtin.get_url:
-    url: https://docker.com
-    dest: /etc/apt/keyrings/docker.asc
-    mode: '0644'
-
-- name: Add Docker official repository
+- name: Add Docker official production repository
   ansible.builtin.apt_repository:
     repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://docker.com {{ ansible_distribution_release }} stable"
     state: present
@@ -37,7 +38,6 @@
     update_cache: yes
     name: [curl, git, apt-transport-https, ca-certificates, python3-pip, docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
     state: present
-
 
 - name: Install Python Kubernetes module for Ansible
   ansible.builtin.pip:
@@ -53,8 +53,6 @@
       swapon /swapfile
       echo '/swapfile none swap sw 0 0' >> /etc/fstab
     fi
-  args:
-    warn: false
   changed_when: false
 
 - name: Ensure Docker is started and enabled
