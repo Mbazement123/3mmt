@@ -14,10 +14,21 @@
     chmod 700 /home/ubuntu/.ansible/tmp
   changed_when: false
 
-- name: Update apt index and install essentials
+- name: Add Docker official GPG key
+  ansible.builtin.apt_key:
+    url: https://docker.com
+    state: present
+
+- name: Add Docker official repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64] https://docker.com {{ ansible_distribution_release }} stable"
+    state: present
+
+- name: Update apt index and install essentials (Official Docker CE)
   ansible.builtin.apt:
     update_cache: yes
-    name: [curl, git, apt-transport-https, ca-certificates, python3-pip, docker.io, docker-compose-plugin]
+    # Note: docker-ce and docker-ce-cli replace docker.io here
+    name: [curl, git, apt-transport-https, ca-certificates, python3-pip, docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
     state: present
 
 - name: Install Python Kubernetes module for Ansible
