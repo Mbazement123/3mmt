@@ -25,7 +25,7 @@ data:
                   to: 0
                 datasourceUid: 'prometheus'
                 model:
-                  expr: kube_deployment_status_replicas_available{deployment="dr-web-app"} == 0
+                  expr: kube_deployment_status_replicas_available{deployment="biodata-frontend"} == 0
                   intervalMs: 10000
                   maxDataPoints: 43200
                   refId: A
@@ -49,7 +49,7 @@ data:
             execErrState: Alerting
             for: 10s
             annotations:
-              summary: "CRITICAL SYSTEM DISASTER: dr-web-app deployment has 0 available replicas!"
+              summary: "CRITICAL SYSTEM DISASTER: biodata-frontend deployment has 0 available replicas!"
             labels:
               severity: critical
 
