@@ -17,6 +17,9 @@ jobs:
     name: "Execute Chaos Injection"
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      ANSIBLE_CONFIG: ${{ github.workspace }}/ansible.cfg
+      ANSIBLE_REMOTE_TMP: /tmp
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -44,16 +47,18 @@ jobs:
       - name: Build Ansible Environment
         working-directory: ansible
         run: |
-          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ${{ github.workspace }}/ansible/private_key.pem
+          chmod 600 ${{ github.workspace }}/ansible/private_key.pem
           echo "[target_vm]" > inventory.ini
-          echo "${{ env.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=private_key.pem" >> inventory.ini
+          echo "${{ env.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=${{ github.workspace }}/ansible/private_key.pem" >> inventory.ini
 
       - name: Fire Disaster Scenario
         timeout-minutes: 20
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ANSIBLE_CONFIG: ${{ github.workspace }}/ansible.cfg
+          ANSIBLE_REMOTE_TMP: /tmp
         working-directory: ansible
         run: |
           ansible-playbook -i inventory.ini chaos.yml -e "fail_stage=${{ github.event.inputs.action }}"
