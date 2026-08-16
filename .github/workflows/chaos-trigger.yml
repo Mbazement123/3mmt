@@ -1,6 +1,6 @@
 name: Manual Chaos & DR Simulation
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       action:
