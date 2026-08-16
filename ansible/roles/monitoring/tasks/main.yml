@@ -26,7 +26,7 @@
 
 - name: Render Grafana alerting manifest to host
   ansible.builtin.template:
-    src: /home/mbazement/project/3mmt/ansible/grafana-alerting.yml
+    src: "{{ playbook_dir }}/grafana-alerting.yml"
     dest: /home/ubuntu/grafana-alerting.yml
     owner: ubuntu
     group: ubuntu
