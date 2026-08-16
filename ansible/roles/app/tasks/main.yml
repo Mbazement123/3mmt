@@ -25,8 +25,7 @@
     owner: ubuntu
     group: ubuntu
     mode: '0755'
-    remote_src: no
-    recurse: yes
+    remote_src: false
   tags: ['app']
 
 - name: Copy frontend source to host
@@ -36,8 +35,7 @@
     owner: ubuntu
     group: ubuntu
     mode: '0755'
-    remote_src: no
-    recurse: yes
+    remote_src: false
   tags: ['app']
 
 - name: Build Docker images inside Minikube Docker daemon
