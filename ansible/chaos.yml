@@ -52,6 +52,6 @@
 
     - name: Print status summary
       ansible.builtin.debug:
-        var:
-          - health_log.stdout_lines
-          - endpoint_log.stdout_lines
+        msg:
+          - "Frontend pods: {{ health_log.stdout_lines | default([]) }}"
+          - "Frontend endpoints: {{ endpoint_log.stdout_lines | default([]) }}"
