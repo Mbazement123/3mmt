@@ -19,8 +19,8 @@
 - name: Clean stale apt locks and ensure remote tmp directory
   ansible.builtin.shell: |
     rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
-    mkdir -p /home/ubuntu/.ansible/tmp
-    chmod 700 /home/ubuntu/.ansible/tmp
+    mkdir -p /tmp/.ansible-remote
+    chmod 700 /tmp/.ansible-remote
   changed_when: false
 
 - name: Create apt keyrings directory structure
