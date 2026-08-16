@@ -1,0 +1,72 @@
+---
+---
+# Application deployment tasks (tagged as 'app')
+- name: Ensure application directory exists
+  ansible.builtin.file:
+    path: /home/ubuntu/app
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+  tags: ['app']
+
+- name: Copy docker-compose.yml to host
+  ansible.builtin.copy:
+    src: ../docker-compose.yml
+    dest: /home/ubuntu/app/docker-compose.yml
+    owner: ubuntu
+    group: ubuntu
+    mode: '0644'
+  tags: ['app']
+
+- name: Copy backend source to host
+  ansible.builtin.copy:
+    src: ../backend/
+    dest: /home/ubuntu/app/backend/
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+    remote_src: no
+    recurse: yes
+  tags: ['app']
+
+- name: Copy frontend source to host
+  ansible.builtin.copy:
+    src: ../frontend/
+    dest: /home/ubuntu/app/frontend/
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+    remote_src: no
+    recurse: yes
+  tags: ['app']
+
+- name: Build Docker images inside Minikube Docker daemon
+  become_user: ubuntu
+  ansible.builtin.shell: |
+    eval $(minikube docker-env)
+    docker compose -f /home/ubuntu/app/docker-compose.yml build
+  tags: ['app']
+
+- name: Copy application Kubernetes manifests to host
+  ansible.builtin.copy:
+    src: ../ansible/app-deployment.yml
+    dest: /home/ubuntu/app-deployment.yml
+    owner: ubuntu
+    group: ubuntu
+  tags: ['app']
+
+- name: Apply application manifests into cluster
+  become_user: ubuntu
+  kubernetes.core.k8s:
+    state: present
+    namespace: default
+    src: /home/ubuntu/app-deployment.yml
+  tags: ['app']
+
+- name: Rolling restart frontend and backend deployments
+  become_user: ubuntu
+  ansible.builtin.shell: |
+    kubectl rollout restart deployment/biodata-frontend -n default || true
+    kubectl rollout restart deployment/biodata-backend -n default || true
+  tags: ['app']

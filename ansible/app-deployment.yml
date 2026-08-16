@@ -1,0 +1,186 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: biodata-frontend
+  namespace: default
+  labels:
+    app: biodata-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: biodata-frontend
+  template:
+    metadata:
+      labels:
+        app: biodata-frontend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: frontend
+          image: biodata-frontend:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: BACKEND_URL
+              value: http://biodata-backend:8000
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: biodata-frontend
+  labels:
+    app: biodata-frontend
+spec:
+  type: NodePort
+  selector:
+    app: biodata-frontend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30080
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: biodata-backend
+  namespace: default
+  labels:
+    app: biodata-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: biodata-backend
+  template:
+    metadata:
+      labels:
+        app: biodata-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: backend
+          image: biodata-backend:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              value: postgresql+psycopg://biodata:biodata@biodata-db:5432/biodata
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: biodata-backend
+  labels:
+    app: biodata-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: biodata-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: biodata-db
+  namespace: default
+  labels:
+    app: biodata-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: biodata-db
+  template:
+    metadata:
+      labels:
+        app: biodata-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_USER
+              value: biodata
+            - name: POSTGRES_PASSWORD
+              value: biodata
+            - name: POSTGRES_DB
+              value: biodata
+          ports:
+            - containerPort: 5432
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U biodata -d biodata
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U biodata -d biodata
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: biodata-db
+  labels:
+    app: biodata-db
+spec:
+  type: ClusterIP
+  selector:
+    app: biodata-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

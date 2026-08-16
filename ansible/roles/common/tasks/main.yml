@@ -1,0 +1,55 @@
+---
+---
+# Tasks for preparing the host: packages, docker, pip modules, swap
+- name: Disable background unattended upgrades to prevent sshd restarts
+  ansible.builtin.systemd:
+    name: unattended-upgrades
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Clean stale apt locks and ensure remote tmp directory
+  ansible.builtin.shell: |
+    rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
+    mkdir -p /home/ubuntu/.ansible/tmp
+    chmod 700 /home/ubuntu/.ansible/tmp
+  changed_when: false
+
+- name: Update apt index and install essentials
+  ansible.builtin.apt:
+    update_cache: yes
+    name: [curl, git, apt-transport-https, ca-certificates, python3-pip, docker.io, docker-compose-plugin]
+    state: present
+
+- name: Install Python Kubernetes module for Ansible
+  ansible.builtin.pip:
+    name: kubernetes
+    state: present
+
+- name: Create 2GB swap file to prevent OOM SSH drops
+  ansible.builtin.shell: |
+    if [ ! -f /swapfile ]; then
+      fallocate -l 2G /swapfile
+      chmod 600 /swapfile
+      mkswap /swapfile
+      swapon /swapfile
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+  args:
+    warn: false
+  changed_when: false
+
+- name: Ensure Docker is started and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Add ubuntu user to docker group
+  ansible.builtin.user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: Reset SSH connection to refresh docker group permissions
+  ansible.builtin.meta: reset_connection

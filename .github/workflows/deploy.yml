@@ -1,0 +1,60 @@
+name: TFC State and Ansible Observability Deployment
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init and Apply
+        id: tf_step
+        working-directory: terraform
+        env:
+          TF_VAR_target_vpc_id: ${{ vars.MY_VPC_ID }}
+          TF_VAR_target_subnet_id: ${{ vars.MY_SUBNET_ID }}
+          TF_VAR_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
+        run: |
+          terraform init -input=false
+          terraform apply -auto-approve -input=false
+          echo "VM_IP=$(terraform output -raw vm_public_ip)" >> $GITHUB_ENV
+
+      - name: Install Ansible and K8s Requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible python3-pip
+          pip3 install kubernetes
+          ansible-galaxy collection install kubernetes.core
+
+      - name: Build Ansible Environment
+        working-directory: ansible
+        run: |
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+          echo "[target_vm]" > inventory.ini
+          echo "${{ env.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=private_key.pem" >> inventory.ini
+
+      - name: Execute Server Configuration & Observability Setup
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          make site-deploy

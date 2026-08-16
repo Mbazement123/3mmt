@@ -1,0 +1,38 @@
+- name: Orchestrate Disaster Recovery Chaos Simulation
+  hosts: target_vm
+  become: yes
+  vars:
+    fail_stage: "{{ fail_stage | default('failover') }}"
+  tasks:
+    # -------------------------------------------------------------
+    # 1. FAILOVER STAGE (Bring down ONLY the web app)
+    # -------------------------------------------------------------
+    - name: Simulate failover by scaling web app deployment to 0 replicas
+      become_user: ubuntu
+      ansible.builtin.command: kubectl scale deployment dr-web-app --replicas=0 -n default
+      when: fail_stage == 'failover'
+
+    - name: Pause for 30 seconds to allow monitoring to detect failure
+      ansible.builtin.pause:
+        seconds: 30
+      when: fail_stage == 'failover'
+
+    # -------------------------------------------------------------
+    # 2. FAILBACK STAGE (Restore ONLY the web app)
+    # -------------------------------------------------------------
+    - name: Perform failback by restoring web app deployment to 1 replica
+      become_user: ubuntu
+      ansible.builtin.command: kubectl scale deployment dr-web-app --replicas=1 -n default
+      when: fail_stage == 'failback'
+
+    # -------------------------------------------------------------
+    # 3. VERIFICATION & HEALTH CHECK
+    # -------------------------------------------------------------
+    - name: Confirm target node cluster health stabilization
+      become_user: ubuntu
+      ansible.builtin.command: kubectl get pods -n default -l app=dr-web-app
+      register: health_log
+
+    - name: Print recovery dashboard summary logs
+      ansible.builtin.debug:
+        var: health_log.stdout_lines

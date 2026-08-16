@@ -1,0 +1,24 @@
+---
+- name: Connection Pre-Flight Check
+  hosts: target_vm
+  gather_facts: no
+  tasks:
+    - name: Patiently wait for instance SSH to finish initializing
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 300
+    - name: Wait for cloud-init system setup to complete
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+
+- name: Core Configuration and Observability Phase (roles)
+  hosts: target_vm
+  become: yes
+  gather_facts: yes
+  vars:
+    alert_webhook_url: "{{ lookup('env', 'ALERT_WEBHOOK_URL') }}"
+  roles:
+    - role: common
+    - role: k8s_setup
+    - role: monitoring
+    - role: app
