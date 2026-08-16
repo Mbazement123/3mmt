@@ -11,14 +11,54 @@
       ansible.builtin.command: cloud-init status --wait
       changed_when: false
 
+- name: Configuration readiness check
+  hosts: target_vm
+  become: yes
+  gather_facts: yes
+  tasks:
+    - name: Check whether Docker is already installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check whether Kubernetes tooling and cluster are already available
+      ansible.builtin.command: kubectl cluster-info
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check whether app source has already been copied to the VM
+      ansible.builtin.stat:
+        path: /home/ubuntu/app
+      register: app_dir_check
+
+    - name: Set provisioning decision
+      ansible.builtin.set_fact:
+        needs_provisioning: "{{ docker_check.rc != 0 or kubectl_check.rc != 0 or not app_dir_check.stat.exists }}"
+
 - name: Core Configuration and Observability Phase (roles)
   hosts: target_vm
   become: yes
   gather_facts: yes
   vars:
     alert_webhook_url: "{{ lookup('env', 'ALERT_WEBHOOK_URL') }}"
+  pre_tasks:
+    - name: Skip configuration if infrastructure and app configuration already exist
+      ansible.builtin.debug:
+        msg: "Existing infrastructure and configuration detected; provisioning steps skipped and marked complete."
+      when: not needs_provisioning
   roles:
     - role: common
+      when: needs_provisioning
     - role: k8s_setup
+      when: needs_provisioning
     - role: monitoring
+      when: needs_provisioning
     - role: app
+      when: needs_provisioning
+  tasks:
+    - name: Mark deployment as complete when configuration already exists
+      ansible.builtin.debug:
+        msg: "Deployment already complete; no provisioning was required."
+      when: not needs_provisioning

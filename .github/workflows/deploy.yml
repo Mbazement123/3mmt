@@ -25,8 +25,8 @@ jobs:
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
-      - name: Terraform Init and Apply
-        id: tf_step
+      - name: Check whether Terraform-managed infrastructure already exists
+        id: infra_check
         working-directory: terraform
         env:
           TF_VAR_target_vpc_id: ${{ vars.MY_VPC_ID }}
@@ -34,8 +34,26 @@ jobs:
           TF_VAR_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
         run: |
           terraform init -input=false
+          if terraform output -raw vm_public_ip >/dev/null 2>&1; then
+            echo "INFRA_READY=true" >> "$GITHUB_OUTPUT"
+            echo "VM_IP=$(terraform output -raw vm_public_ip)" >> "$GITHUB_ENV"
+            echo "Existing infrastructure detected; skipping Terraform provisioning."
+          else
+            echo "INFRA_READY=false" >> "$GITHUB_OUTPUT"
+            echo "Terraform infrastructure not found; provisioning required."
+          fi
+
+      - name: Provision infrastructure if missing
+        if: steps.infra_check.outputs.INFRA_READY != 'true'
+        id: tf_step
+        working-directory: terraform
+        env:
+          TF_VAR_target_vpc_id: ${{ vars.MY_VPC_ID }}
+          TF_VAR_target_subnet_id: ${{ vars.MY_SUBNET_ID }}
+          TF_VAR_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
+        run: |
           terraform apply -auto-approve -input=false
-          echo "VM_IP=$(terraform output -raw vm_public_ip)" >> $GITHUB_ENV
+          echo "VM_IP=$(terraform output -raw vm_public_ip)" >> "$GITHUB_ENV"
 
       - name: Install Ansible and K8s Requirements
         run: |
@@ -52,9 +70,29 @@ jobs:
           echo "[target_vm]" > inventory.ini
           echo "${{ env.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=${{ github.workspace }}/ansible/private_key.pem" >> inventory.ini
 
+      - name: Check whether configuration is already present on target VM
+        id: config_check
+        working-directory: ansible
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          if ansible -i inventory.ini target_vm -m shell -a "docker --version && kubectl cluster-info >/dev/null 2>&1 && test -d /home/ubuntu/app" >/tmp/ansible_config_check.log 2>&1; then
+            echo "CONFIG_READY=true" >> "$GITHUB_OUTPUT"
+            echo "Existing target configuration detected; Ansible configuration will be skipped."
+          else
+            echo "CONFIG_READY=false" >> "$GITHUB_OUTPUT"
+            echo "Target configuration missing or incomplete; provisioning required."
+          fi
+
       - name: Execute Server Configuration & Observability Setup
+        if: steps.config_check.outputs.CONFIG_READY != 'true'
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: |
           make site-deploy
+
+      - name: Skip configuration because the target is already provisioned and configured
+        if: steps.config_check.outputs.CONFIG_READY == 'true'
+        run: |
+          echo "Infrastructure and configuration are already present; provisioning steps skipped and marked complete."
