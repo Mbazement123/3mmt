@@ -1,5 +1,4 @@
 ---
----
 # Application deployment tasks (tagged as 'app')
 - name: Ensure application directory exists
   ansible.builtin.file:

@@ -1,5 +1,4 @@
 ---
----
 - name: Add prometheus-community Helm repository
   become_user: ubuntu
   kubernetes.core.helm_repository:

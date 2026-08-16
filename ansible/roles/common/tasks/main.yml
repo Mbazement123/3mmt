@@ -1,5 +1,4 @@
 ---
----
 # Tasks for preparing the host: packages, docker, pip modules, swap
 - name: Disable background unattended upgrades to prevent sshd restarts
   ansible.builtin.systemd:
