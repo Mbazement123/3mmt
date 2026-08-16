@@ -20,7 +20,7 @@
   ansible.builtin.shell: |
     rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock || true
     mkdir -p /tmp/.ansible-remote
-    chmod 700 /tmp/.ansible-remote
+    chmod 777 /tmp/.ansible-remote
   changed_when: false
 
 - name: Create apt keyrings directory structure

@@ -50,8 +50,7 @@ jobs:
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
           echo "[target_vm]" > inventory.ini
-          # FIXED: Appended 'ansible/' to the key file path for root execution context
-          echo "${{ env.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=ansible/private_key.pem" >> inventory.ini
+          echo "${{ env.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=${{ github.workspace }}/ansible/private_key.pem" >> inventory.ini
 
       - name: Execute Server Configuration & Observability Setup
         env:
