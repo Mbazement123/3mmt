@@ -1,5 +1,4 @@
 ---
----
 - name: Download Minikube binary
   ansible.builtin.get_url:
     url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
