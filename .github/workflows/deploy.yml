@@ -33,16 +33,20 @@ jobs:
           TF_VAR_target_subnet_id: ${{ vars.MY_SUBNET_ID }}
           TF_VAR_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
         run: |
+
           terraform init -input=false
-          if terraform output -raw vm_public_ip >/dev/null 2>&1; then
+          # Fetch output value safely without failing the script if unassigned
+          VM_IP=$(terraform output -raw vm_public_ip 2>/dev/null || echo "")
+          # Verify that VM_IP actually contains a non-empty value
+          if [ -n "$VM_IP" ]; then
             echo "INFRA_READY=true" >> "$GITHUB_OUTPUT"
-            echo "VM_IP=$(terraform output -raw vm_public_ip)" >> "$GITHUB_ENV"
-            echo "Existing infrastructure detected; skipping Terraform provisioning."
+            echo "VM_IP=$VM_IP" >> "$GITHUB_ENV"
+            echo "Existing infrastructure detected (IP: $VM_IP); skipping Terraform provisioning."
           else
             echo "INFRA_READY=false" >> "$GITHUB_OUTPUT"
-            echo "Terraform infrastructure not found; provisioning required."
+            echo "Terraform infrastructure not found or IP unassigned; provisioning required."
           fi
-
+          
       - name: Provision infrastructure if missing
         if: steps.infra_check.outputs.INFRA_READY != 'true'
         id: tf_step
