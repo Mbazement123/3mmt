@@ -67,20 +67,3 @@
     kubectl rollout restart deployment/biodata-frontend -n default || true
     kubectl rollout restart deployment/biodata-backend -n default || true
   tags: ['app']
-
-- name: Wait for frontend deployment to become ready
-  become_user: ubuntu
-  ansible.builtin.command: kubectl rollout status deployment/biodata-frontend -n default --timeout=180s
-  register: frontend_rollout
-  changed_when: false
-  tags: ['app']
-
-- name: Start frontend port-forward after the app is up
-  become_user: ubuntu
-  ansible.builtin.shell: |
-    if ! pgrep -f "kubectl port-forward svc/biodata-frontend 3000:3000 --address 0.0.0.0" >/dev/null 2>&1; then
-      nohup kubectl port-forward svc/biodata-frontend 3000:3000 --address 0.0.0.0 >/home/ubuntu/port-forward-frontend.log 2>&1 &
-    fi
-  args:
-    executable: /bin/bash
-  tags: ['app']
