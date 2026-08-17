@@ -38,11 +38,13 @@
     remote_src: false
   tags: ['app']
 
-- name: Build Docker images inside Minikube Docker daemon
+- name: Build Docker images and load directly into Minikube
   become_user: ubuntu
   ansible.builtin.shell: |
     eval $(minikube docker-env)
     docker compose -f /home/ubuntu/app/docker-compose.yml build
+  args:
+    executable: /bin/bash
   tags: ['app']
 
 - name: Copy application Kubernetes manifests to host
@@ -66,13 +68,36 @@
   ansible.builtin.shell: |
     kubectl rollout restart deployment/biodata-frontend -n default || true
     kubectl rollout restart deployment/biodata-backend -n default || true
+  args:
+    executable: /bin/bash
   tags: ['app']
 
 - name: Wait for frontend deployment to become ready
   become_user: ubuntu
-  ansible.builtin.command: kubectl rollout status deployment/biodata-frontend -n default --timeout=180s
+  ansible.builtin.command: kubectl rollout status deployment/biodata-frontend -n default --timeout=300s
   register: frontend_rollout
   changed_when: false
+  ignore_errors: true
+  tags: ['app']
+
+- name: Debug failing pods if rollout timed out
+  become_user: ubuntu
+  ansible.builtin.shell: |
+    echo "=== POD STATUS ==="
+    kubectl get pods -n default -l app=biodata-frontend
+    echo "=== DESCRIBE PODS ==="
+    kubectl describe pods -n default -l app=biodata-frontend
+    echo "=== POD LOGS ==="
+    kubectl logs -n default -l app=biodata-frontend --tail=50 || true
+  args:
+    executable: /bin/bash
+  when: frontend_rollout.rc != 0
+  tags: ['app']
+
+- name: Fail build if frontend rollout failed
+  ansible.builtin.fail:
+    msg: "Frontend rollout timed out or failed to reach ready state. Check the debug output above for details."
+  when: frontend_rollout.rc != 0
   tags: ['app']
 
 - name: Start frontend port-forward after the app is up
