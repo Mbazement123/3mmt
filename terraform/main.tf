@@ -1,8 +1,8 @@
 locals {
-  primary_vpc_id        = var.create_primary_vpc ? module.primary_network.vpc_id : var.primary_vpc_id
-  primary_subnets       = var.create_primary_vpc ? module.primary_network.public_subnet_ids : var.primary_subnet_ids
-  dr_vpc_id             = var.create_dr_vpc ? module.dr_network.vpc_id : var.dr_vpc_id
-  dr_subnets            = var.create_dr_vpc ? module.dr_network.public_subnet_ids : var.dr_subnet_ids
+  primary_vpc_id        = var.create_primary_vpc ? module.primary_network[0].vpc_id : var.primary_vpc_id
+  primary_subnets       = var.create_primary_vpc ? module.primary_network[0].public_subnet_ids : var.primary_subnet_ids
+  dr_vpc_id             = var.create_dr_vpc ? module.dr_network[0].vpc_id : var.dr_vpc_id
+  dr_subnets            = var.create_dr_vpc ? module.dr_network[0].public_subnet_ids : var.dr_subnet_ids
   primary_ami_copy_name = "${var.project_name}-dr-ami"
 }
 
