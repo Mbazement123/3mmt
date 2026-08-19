@@ -8,33 +8,36 @@
         delay: 5
         timeout: 300
     - name: Wait for cloud-init system setup to complete
-      block:
-        - name: Wait for cloud-init system setup to complete
-          ansible.builtin.command: cloud-init status --wait
-          changed_when: false
-      rescue:
-        - name: Collect cloud-init status details
-          ansible.builtin.command: cloud-init status --long
-          register: cloud_init_status
-          changed_when: false
-          failed_when: false
+      ansible.builtin.command: cloud-init status --wait
+      register: cloud_init_wait
+      changed_when: false
+      failed_when: false
 
-        - name: Collect cloud-init logs
-          ansible.builtin.command: journalctl -u cloud-init -u cloud-final --no-pager -n 100
-          register: cloud_init_logs
-          changed_when: false
-          failed_when: false
+    - name: Collect cloud-init status details after a failure
+      ansible.builtin.command: cloud-init status --long
+      register: cloud_init_status
+      changed_when: false
+      failed_when: false
+      when: cloud_init_wait.rc != 0
 
-        - name: Fail with cloud-init diagnostics
-          ansible.builtin.fail:
-            msg: |
-              cloud-init failed during instance setup.
+    - name: Collect cloud-init logs after a failure
+      ansible.builtin.command: journalctl -u cloud-init -u cloud-final --no-pager -n 100
+      register: cloud_init_logs
+      changed_when: false
+      failed_when: false
+      when: cloud_init_wait.rc != 0
 
-              Status:
-              {{ cloud_init_status.stdout | default('unavailable') }}
+    - name: Fail when cloud-init did not complete successfully
+      ansible.builtin.fail:
+        msg: |
+          cloud-init failed during instance setup.
 
-              Logs:
-              {{ cloud_init_logs.stdout | default('unavailable') }}
+          Status:
+          {{ cloud_init_status.stdout | default('unavailable') }}
+
+          Logs:
+          {{ cloud_init_logs.stdout | default('unavailable') }}
+      when: cloud_init_wait.rc != 0
 
 - name: Configuration readiness check
   hosts: target_vm
