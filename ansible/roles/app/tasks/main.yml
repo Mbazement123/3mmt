@@ -38,9 +38,21 @@
     remote_src: false
   tags: ['app']
 
-- name: Build and start the Docker Compose application
+- name: Validate the Docker Compose application
   become_user: ubuntu
-  ansible.builtin.shell: |
-    docker compose -f /opt/app/docker-compose.yml build
-    docker compose -f /opt/app/docker-compose.yml up -d
+  ansible.builtin.command:
+    cmd: docker compose -f /opt/app/docker-compose.yml config --quiet
+  changed_when: false
+  tags: ['app']
+
+- name: Build the Docker Compose application
+  become_user: ubuntu
+  ansible.builtin.command:
+    cmd: docker compose -f /opt/app/docker-compose.yml build
+  tags: ['app']
+
+- name: Start the Docker Compose application
+  become_user: ubuntu
+  ansible.builtin.command:
+    cmd: docker compose -f /opt/app/docker-compose.yml up -d --remove-orphans
   tags: ['app']
