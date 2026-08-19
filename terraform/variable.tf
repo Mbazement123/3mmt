@@ -43,7 +43,7 @@ variable "dr_azs" {
 variable "app_ami_id" {
   description = "Custom AMI ID in the primary region for the ASG launch template"
   type        = string
-  default     = "ami-05697bc11ddda1f1a"
+  default     = "ami-0f2bc09f6cdee7d35"
 }
 
 variable "instance_type" {
@@ -53,9 +53,16 @@ variable "instance_type" {
 }
 
 variable "key_name" {
-  description = "Existing EC2 SSH key pair name"
+  description = "Optional existing EC2 SSH key pair name"
   type        = string
-  default     = "biodata-project-key"
+  default     = null
+}
+
+variable "alert_email" {
+  description = "Optional email address for CloudWatch alerts"
+  type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "target_port" {
