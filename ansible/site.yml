@@ -35,7 +35,7 @@
 
     - name: Set provisioning decision
       ansible.builtin.set_fact:
-        needs_provisioning: "{{ docker_check.rc != 0 or compose_check.rc != 0 or not app_dir_check.stat.exists }}"
+        needs_provisioning: "{{ force_deploy | default(false) | bool or docker_check.rc != 0 or compose_check.rc != 0 or not app_dir_check.stat.exists }}"
 
 - name: Core Configuration Phase (roles)
   hosts: target_vm

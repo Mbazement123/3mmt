@@ -37,3 +37,8 @@ output "dr_asg_name" {
   description = "DR ASG name"
   value       = module.dr_asg.asg_name
 }
+
+output "alerts_topic_arn" {
+  description = "SNS topic ARN for primary and DR monitoring alerts"
+  value       = aws_sns_topic.alerts.arn
+}

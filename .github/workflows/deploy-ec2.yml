@@ -1,0 +1,78 @@
+name: Deploy application to EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: Optional EC2 public DNS name or IP; defaults to the EC2_HOST secret
+        required: false
+        type: string
+      user:
+        description: Optional SSH user; defaults to ubuntu
+        required: false
+        default: ubuntu
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ec2-deployment
+  cancel-in-progress: false
+
+env:
+  EC2_HOST: ${{ inputs.host || secrets.EC2_HOST }}
+  EC2_USER: ${{ inputs.user || secrets.EC2_USER || 'ubuntu' }}
+
+jobs:
+  deploy:
+    name: Configure EC2 and deploy application
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ansible
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+      - name: Trust EC2 host key
+        run: |
+          set -euo pipefail
+          test -n "$EC2_HOST"
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Create deployment inventory
+        run: |
+          set -euo pipefail
+          cat > ansible/inventory.ini <<EOF
+          [target_vm]
+          ec2 ansible_host=${EC2_HOST} ansible_user=${EC2_USER} ansible_python_interpreter=/usr/bin/python3
+          EOF
+
+      - name: Check EC2 connection
+        run: ansible target_vm -i ansible/inventory.ini -m ping
+
+      - name: Configure EC2 and deploy application
+        run: ansible-playbook -i ansible/inventory.ini ansible/site.yml -e force_deploy=true
+
+      - name: Verify application health
+        run: |
+          set -euo pipefail
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error "http://${EC2_HOST}:8000/health"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Application health check failed"
+          exit 1

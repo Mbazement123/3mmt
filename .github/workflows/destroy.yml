@@ -39,6 +39,101 @@ jobs:
         working-directory: terraform
         run: terraform init
 
+      - name: Remove unmanaged AWS leftovers
+        env:
+          PRIMARY_REGION: eu-north-1
+          LEGACY_PRIMARY_REGION: us-east-1
+          DR_REGION: us-west-2
+        run: |
+          set -euo pipefail
+
+          cleanup_region() {
+            local region="$1"
+
+            for asg in biodata-primary-asg biodata-dr-asg; do
+              for instance_id in $(aws autoscaling describe-auto-scaling-groups \
+                --auto-scaling-group-names "$asg" \
+                --region "$region" \
+                --query 'AutoScalingGroups[0].Instances[].InstanceId' \
+                --output text); do
+                aws ec2 terminate-instances \
+                  --instance-ids "$instance_id" \
+                  --region "$region" 2>/dev/null || true
+              done
+
+              aws autoscaling delete-auto-scaling-group \
+                --auto-scaling-group-name "$asg" \
+                --force-delete \
+                --region "$region" 2>/dev/null || true
+            done
+
+            for lb_arn in $(aws elbv2 describe-load-balancers \
+              --region "$region" \
+              --query "LoadBalancers[?contains(LoadBalancerName, 'biodata-primary-alb') || contains(LoadBalancerName, 'biodata-dr-alb')].LoadBalancerArn" \
+              --output text); do
+              for listener_arn in $(aws elbv2 describe-listeners \
+                --load-balancer-arn "$lb_arn" \
+                --region "$region" \
+                --query 'Listeners[].ListenerArn' \
+                --output text); do
+                aws elbv2 delete-listener --listener-arn "$listener_arn" --region "$region" || true
+              done
+              aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn" --region "$region" || true
+              aws elbv2 wait load-balancers-deleted --load-balancer-arns "$lb_arn" --region "$region" || true
+            done
+
+            for tg_arn in $(aws elbv2 describe-target-groups \
+              --region "$region" \
+              --query "TargetGroups[?contains(TargetGroupName, 'biodata-primary-tg') || contains(TargetGroupName, 'biodata-dr-tg')].TargetGroupArn" \
+              --output text); do
+              aws elbv2 delete-target-group --target-group-arn "$tg_arn" --region "$region" || true
+            done
+
+            for file_system_id in $(aws efs describe-file-systems \
+              --region "$region" \
+              --query "FileSystems[?CreationToken == 'biodata-primary-efs' || CreationToken == 'biodata-dr-efs'].FileSystemId" \
+              --output text); do
+              for mount_target_id in $(aws efs describe-mount-targets \
+                --file-system-id "$file_system_id" \
+                --region "$region" \
+                --query 'MountTargets[].MountTargetId' \
+                --output text); do
+                aws efs delete-mount-target --mount-target-id "$mount_target_id" --region "$region" || true
+                aws efs wait mount-target-deleted --mount-target-id "$mount_target_id" --region "$region" || true
+              done
+              aws efs delete-file-system --file-system-id "$file_system_id" --region "$region" || true
+            done
+
+            aws ec2 delete-key-pair \
+              --key-name biodata-project-key \
+              --region "$region" 2>/dev/null || true
+          }
+
+          cleanup_region "$PRIMARY_REGION"
+          cleanup_region "$LEGACY_PRIMARY_REGION"
+          cleanup_region "$DR_REGION"
+
+      - name: Remove stale Terraform state entries
+        working-directory: terraform
+        run: |
+          terraform state rm \
+            'module.primary_alb.aws_lb.this' \
+            'module.primary_alb.aws_lb_target_group.this' \
+            'module.primary_alb.aws_lb_listener.http' \
+            'module.primary_efs.aws_efs_file_system.this' \
+            'module.primary_efs.aws_efs_mount_target.this[0]' \
+            'module.primary_efs.aws_efs_mount_target.this[1]' \
+            'module.primary_asg.aws_launch_template.this' \
+            'module.primary_asg.aws_autoscaling_group.this' \
+            'module.dr_alb.aws_lb.this' \
+            'module.dr_alb.aws_lb_target_group.this' \
+            'module.dr_alb.aws_lb_listener.http' \
+            'module.dr_efs.aws_efs_file_system.this' \
+            'module.dr_efs.aws_efs_mount_target.this[0]' \
+            'module.dr_efs.aws_efs_mount_target.this[1]' \
+            'module.dr_asg.aws_launch_template.this' \
+            'module.dr_asg.aws_autoscaling_group.this' || true
+
       - name: Terraform validate
         working-directory: terraform
         run: terraform validate
