@@ -35,9 +35,7 @@ jobs:
           aws-region: ${{ env.PRIMARY_REGION }}
 
       - name: Install Ansible
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes ansible
+        run: pipx install --include-deps ansible-core
 
       - name: Configure SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -73,13 +71,17 @@ jobs:
           get_host() {
             local region="$1"
             local asg="$2"
+            local instance_ids
             local instance_id
-            instance_id=$(aws autoscaling describe-auto-scaling-groups \
+            instance_ids=$(aws autoscaling describe-auto-scaling-groups \
               --region "$region" \
               --auto-scaling-group-names "$asg" \
-              --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`]|[0].InstanceId' \
+              --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
               --output text)
-            test -n "$instance_id" && test "$instance_id" != "None"
+            test -n "$instance_ids" && test "$instance_ids" != "None"
+            read -r -a instance_id_list <<< "$instance_ids"
+            test "${#instance_id_list[@]}" -eq 1
+            instance_id="${instance_id_list[0]}"
             aws ec2 describe-instances \
               --region "$region" \
               --instance-ids "$instance_id" \
