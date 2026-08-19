@@ -8,8 +8,33 @@
         delay: 5
         timeout: 300
     - name: Wait for cloud-init system setup to complete
-      ansible.builtin.command: cloud-init status --wait
-      changed_when: false
+      block:
+        - name: Wait for cloud-init system setup to complete
+          ansible.builtin.command: cloud-init status --wait
+          changed_when: false
+      rescue:
+        - name: Collect cloud-init status details
+          ansible.builtin.command: cloud-init status --long
+          register: cloud_init_status
+          changed_when: false
+          failed_when: false
+
+        - name: Collect cloud-init logs
+          ansible.builtin.command: journalctl -u cloud-init -u cloud-final --no-pager -n 100
+          register: cloud_init_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Fail with cloud-init diagnostics
+          ansible.builtin.fail:
+            msg: |
+              cloud-init failed during instance setup.
+
+              Status:
+              {{ cloud_init_status.stdout | default('unavailable') }}
+
+              Logs:
+              {{ cloud_init_logs.stdout | default('unavailable') }}
 
 - name: Configuration readiness check
   hosts: target_vm
