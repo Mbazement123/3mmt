@@ -51,6 +51,16 @@ jobs:
             local region="$1"
 
             for asg in biodata-primary-asg biodata-dr-asg; do
+              for instance_id in $(aws autoscaling describe-auto-scaling-groups \
+                --auto-scaling-group-names "$asg" \
+                --region "$region" \
+                --query 'AutoScalingGroups[0].Instances[].InstanceId' \
+                --output text); do
+                aws ec2 terminate-instances \
+                  --instance-ids "$instance_id" \
+                  --region "$region" 2>/dev/null || true
+              done
+
               aws autoscaling delete-auto-scaling-group \
                 --auto-scaling-group-name "$asg" \
                 --force-delete \
