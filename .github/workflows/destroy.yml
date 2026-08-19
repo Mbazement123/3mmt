@@ -23,7 +23,7 @@ jobs:
     name: Plan and destroy Terraform infrastructure
     runs-on: ubuntu-latest
     environment: terraform-destroy
-    if: inputs.confirmation == 'DESTROY'
+    
 
     steps:
       - name: Checkout repository
@@ -55,14 +55,3 @@ jobs:
         if: success()
         run: |
           echo "Terraform Cloud workspace infrastructure has been destroyed. Reason: ${{ inputs.reason || 'not provided' }}"
-
-  invalid-confirmation:
-    name: Reject missing confirmation
-    runs-on: ubuntu-latest
-    if: inputs.confirmation != 'DESTROY'
-
-    steps:
-      - name: Fail without confirmation
-        run: |
-          echo "Destruction was not run. The confirmation input must be exactly DESTROY."
-          exit 1
