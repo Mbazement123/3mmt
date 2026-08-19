@@ -46,22 +46,42 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          for region in "$PRIMARY_REGION" "$DR_REGION"; do
-            instance_ids=$(aws autoscaling describe-auto-scaling-groups \
-              --region "$region" \
-              --auto-scaling-group-names "$([ "$region" = "$PRIMARY_REGION" ] && echo "$PRIMARY_ASG" || echo "$DR_ASG")" \
-              --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
-              --output text)
-            test -n "$instance_ids"
-            for instance_id in $instance_ids; do
-              host=$(aws ec2 describe-instances \
+
+          get_host() {
+            local region="$1"
+            local asg="$2"
+            local instance_ids
+            local host
+
+            for attempt in {1..30}; do
+              instance_ids=$(aws autoscaling describe-auto-scaling-groups \
                 --region "$region" \
-                --instance-ids "$instance_id" \
-                --query 'Reservations[0].Instances[0].PublicIpAddress' \
+                --auto-scaling-group-names "$asg" \
+                --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
                 --output text)
-              test -n "$host" && test "$host" != "None"
-              ssh-keyscan -H "$host" >> ~/.ssh/known_hosts
+              if [ -n "$instance_ids" ] && [ "$instance_ids" != "None" ]; then
+                read -r instance_id _ <<< "$instance_ids"
+                host=$(aws ec2 describe-instances \
+                  --region "$region" \
+                  --instance-ids "$instance_id" \
+                  --query 'Reservations[0].Instances[0].PublicIpAddress' \
+                  --output text)
+                if [ -n "$host" ] && [ "$host" != "None" ]; then
+                  printf '%s\n' "$host"
+                  return 0
+                fi
+              fi
+              sleep 10
             done
+
+            echo "Timed out waiting for an InService instance with a public IP in $region" >&2
+            return 1
+          }
+
+          for region in "$PRIMARY_REGION" "$DR_REGION"; do
+            asg="$([ "$region" = "$PRIMARY_REGION" ] && echo "$PRIMARY_ASG" || echo "$DR_ASG")"
+            host=$(get_host "$region" "$asg")
+            ssh-keyscan -H "$host" >> ~/.ssh/known_hosts
           done
 
       - name: Discover regional application instances
@@ -73,20 +93,31 @@ jobs:
             local asg="$2"
             local instance_ids
             local instance_id
-            instance_ids=$(aws autoscaling describe-auto-scaling-groups \
-              --region "$region" \
-              --auto-scaling-group-names "$asg" \
-              --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
-              --output text)
-            test -n "$instance_ids" && test "$instance_ids" != "None"
-            read -r -a instance_id_list <<< "$instance_ids"
-            test "${#instance_id_list[@]}" -eq 1
-            instance_id="${instance_id_list[0]}"
-            aws ec2 describe-instances \
-              --region "$region" \
-              --instance-ids "$instance_id" \
-              --query 'Reservations[0].Instances[0].PublicIpAddress' \
-              --output text
+            local host
+
+            for attempt in {1..30}; do
+              instance_ids=$(aws autoscaling describe-auto-scaling-groups \
+                --region "$region" \
+                --auto-scaling-group-names "$asg" \
+                --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
+                --output text)
+              if [ -n "$instance_ids" ] && [ "$instance_ids" != "None" ]; then
+                read -r instance_id _ <<< "$instance_ids"
+                host=$(aws ec2 describe-instances \
+                  --region "$region" \
+                  --instance-ids "$instance_id" \
+                  --query 'Reservations[0].Instances[0].PublicIpAddress' \
+                  --output text)
+                if [ -n "$host" ] && [ "$host" != "None" ]; then
+                  printf '%s\n' "$host"
+                  return 0
+                fi
+              fi
+              sleep 10
+            done
+
+            echo "Timed out waiting for an InService instance with a public IP in $region" >&2
+            return 1
           }
 
           primary_host=$(get_host "$PRIMARY_REGION" "$PRIMARY_ASG")
