@@ -1,0 +1,128 @@
+name: Configure instance for application
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ec2-deployment
+  cancel-in-progress: false
+
+env:
+  PRIMARY_REGION: eu-north-1
+  DR_REGION: us-west-2
+  PRIMARY_ASG: biodata-primary-asg
+  DR_ASG: biodata-dr-asg
+  EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+
+jobs:
+  deploy:
+    name: Configure instances for application
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.PRIMARY_REGION }}
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ansible
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+      - name: Trust EC2 host key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          for region in "$PRIMARY_REGION" "$DR_REGION"; do
+            instance_ids=$(aws autoscaling describe-auto-scaling-groups \
+              --region "$region" \
+              --auto-scaling-group-names "$([ "$region" = "$PRIMARY_REGION" ] && echo "$PRIMARY_ASG" || echo "$DR_ASG")" \
+              --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
+              --output text)
+            test -n "$instance_ids"
+            for instance_id in $instance_ids; do
+              host=$(aws ec2 describe-instances \
+                --region "$region" \
+                --instance-ids "$instance_id" \
+                --query 'Reservations[0].Instances[0].PublicIpAddress' \
+                --output text)
+              test -n "$host" && test "$host" != "None"
+              ssh-keyscan -H "$host" >> ~/.ssh/known_hosts
+            done
+          done
+
+      - name: Discover regional application instances
+        run: |
+          set -euo pipefail
+
+          get_host() {
+            local region="$1"
+            local asg="$2"
+            local instance_id
+            instance_id=$(aws autoscaling describe-auto-scaling-groups \
+              --region "$region" \
+              --auto-scaling-group-names "$asg" \
+              --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`]|[0].InstanceId' \
+              --output text)
+            test -n "$instance_id" && test "$instance_id" != "None"
+            aws ec2 describe-instances \
+              --region "$region" \
+              --instance-ids "$instance_id" \
+              --query 'Reservations[0].Instances[0].PublicIpAddress' \
+              --output text
+          }
+
+          primary_host=$(get_host "$PRIMARY_REGION" "$PRIMARY_ASG")
+          dr_host=$(get_host "$DR_REGION" "$DR_ASG")
+          test "$primary_host" != "None" && test "$dr_host" != "None"
+
+          {
+            echo "PRIMARY_HOST=$primary_host"
+            echo "DR_HOST=$dr_host"
+          } >> "$GITHUB_ENV"
+
+      - name: Create deployment inventory
+        run: |
+          set -euo pipefail
+          cat > ansible/inventory.ini <<EOF
+          [target_vm]
+          primary ansible_host=${PRIMARY_HOST} ansible_user=${EC2_USER} ansible_python_interpreter=/usr/bin/python3
+          dr ansible_host=${DR_HOST} ansible_user=${EC2_USER} ansible_python_interpreter=/usr/bin/python3
+          EOF
+
+      - name: Check EC2 connection
+        run: ansible target_vm -i ansible/inventory.ini -m ping
+
+      - name: Configure instances and deploy application
+        run: ansible-playbook -i ansible/inventory.ini ansible/site.yml -e force_deploy=true
+
+      - name: Verify application health
+        run: |
+          set -euo pipefail
+          for host in "$PRIMARY_HOST" "$DR_HOST"; do
+            for attempt in {1..30}; do
+              if curl --fail --silent --show-error "http://${host}:8000/health"; then
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "Application health check failed for $host"
+                exit 1
+              fi
+              sleep 10
+            done
+          done
