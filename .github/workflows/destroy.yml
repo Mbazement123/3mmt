@@ -2,15 +2,7 @@ name: Terraform Cloud + AWS Destroy
 
 on:
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: Type DESTROY to confirm removal of all Terraform-managed infrastructure
-        required: true
-        type: string
-      reason:
-        description: Reason for destroying the environment
-        required: false
-        type: string
+    
 
 permissions:
   contents: read
