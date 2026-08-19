@@ -45,11 +45,36 @@ jobs:
 
       - name: Create destroy plan
         working-directory: terraform
-        run: terraform plan -destroy -out=tfplan
+        run: terraform plan -refresh=true -destroy -out=tfplan
 
       - name: Apply destroy plan
         working-directory: terraform
         run: terraform apply -auto-approve tfplan
+
+      - name: Verify regional AWS resources were removed
+        env:
+          PRIMARY_REGION: eu-north-1
+          DR_REGION: us-west-2
+        run: |
+          set -euo pipefail
+
+          for region in "$PRIMARY_REGION" "$DR_REGION"; do
+            test "$(aws elbv2 describe-load-balancers \
+              --region "$region" \
+              --query "length(LoadBalancers[?contains(LoadBalancerName, 'biodata-')])" \
+              --output text)" = "0"
+
+            test "$(aws ec2 describe-security-groups \
+              --region "$region" \
+              --filters Name=tag:Project,Values=biodata \
+              --query 'length(SecurityGroups)' \
+              --output text)" = "0"
+
+            test "$(aws efs describe-file-systems \
+              --region "$region" \
+              --query "length(FileSystems[?CreationToken == 'biodata-primary-efs' || CreationToken == 'biodata-dr-efs'])" \
+              --output text)" = "0"
+          done
 
       - name: Report completion
         if: success()
