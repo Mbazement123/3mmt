@@ -2,7 +2,7 @@ terraform {
   required_version = ">= 1.6.0"
 
   cloud {
-    organization = "YOUR_TERRAFORM_CLOUD_ORG"
+    organization = "Eohoi_Miracle"
     workspaces {
       name = "k8s-dr-project"
     }
