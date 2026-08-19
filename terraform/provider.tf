@@ -1,22 +1,24 @@
-terraform {
-  required_version = ">= 1.15.8"
+provider "aws" {
+  region = var.primary_region
 
-  cloud {
-    
-    organization = "Eohoi_Miracle"
-
-    workspaces {
-      name = "k8s-dr-project"
-    }
-  }
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = "prod"
+      ManagedBy   = "terraform"
     }
   }
 }
 
 provider "aws" {
-  region = "eu-north-1"
+  alias  = "dr"
+  region = var.dr_region
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = "prod"
+      ManagedBy   = "terraform"
+    }
+  }
 }

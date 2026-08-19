@@ -1,4 +1,39 @@
-output "vm_public_ip" {
-  value       = aws_instance.k8s_vm.public_ip
-  description = "The dynamic public IP address allocated by AWS"
+output "primary_vpc_id" {
+  description = "Primary VPC ID"
+  value       = local.primary_vpc_id
+}
+
+output "dr_vpc_id" {
+  description = "DR VPC ID"
+  value       = local.dr_vpc_id
+}
+
+output "primary_alb_dns_name" {
+  description = "DNS name of the primary ALB"
+  value       = module.primary_alb.alb_dns_name
+}
+
+output "dr_alb_dns_name" {
+  description = "DNS name of the DR ALB"
+  value       = module.dr_alb.alb_dns_name
+}
+
+output "primary_efs_id" {
+  description = "Primary EFS file system ID"
+  value       = module.primary_efs.file_system_id
+}
+
+output "dr_efs_id" {
+  description = "DR EFS file system ID"
+  value       = module.dr_efs.file_system_id
+}
+
+output "primary_asg_name" {
+  description = "Primary ASG name"
+  value       = module.primary_asg.asg_name
+}
+
+output "dr_asg_name" {
+  description = "DR ASG name"
+  value       = module.dr_asg.asg_name
 }

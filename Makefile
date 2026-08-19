@@ -51,10 +51,3 @@ site-deploy: ## Run the master Ansible site playbook
 app-deploy: ## Run only the app role tasks via Ansible tags
 	ansible-playbook -i ansible/inventory.ini ansible/site.yml --tags "app"
 
-# Kubernetes helper targets
-k8s-status: ## Show pods, services and deployments across namespaces
-	kubectl get pods,svc,deployments -A
-
-k8s-restart: ## Rolling restart frontend and backend deployments
-	kubectl rollout restart deployment/biodata-frontend -n default || true
-	kubectl rollout restart deployment/biodata-backend -n default || true

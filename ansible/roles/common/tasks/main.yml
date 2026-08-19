@@ -50,12 +50,7 @@
 - name: Update apt index and install essentials (Official Docker CE)
   ansible.builtin.apt:
     update_cache: yes
-    name: [curl, git, apt-transport-https, ca-certificates, python3-pip, docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
-    state: present
-
-- name: Install Python Kubernetes module for Ansible
-  ansible.builtin.pip:
-    name: kubernetes
+    name: [curl, git, apt-transport-https, ca-certificates, python3-pip, docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, amazon-efs-utils, prometheus-node-exporter]
     state: present
 
 - name: Create 2GB swap file to prevent OOM SSH drops
