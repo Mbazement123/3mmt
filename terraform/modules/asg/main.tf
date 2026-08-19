@@ -80,7 +80,7 @@ resource "aws_launch_template" "this" {
     exit 1
   EOT
   )
-  
+
   network_interfaces {
     associate_public_ip_address = true
     security_groups             = var.security_group_ids
