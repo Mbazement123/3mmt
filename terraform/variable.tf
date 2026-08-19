@@ -31,7 +31,7 @@ variable "vpc_cidr_dr" {
 variable "primary_azs" {
   description = "Availability zones to use in the primary region"
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
+  default     = ["eu-north-1a", "eu-north-1b"]
 }
 
 variable "dr_azs" {
