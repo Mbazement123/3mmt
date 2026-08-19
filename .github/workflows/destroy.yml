@@ -113,27 +113,6 @@ jobs:
           cleanup_region "$LEGACY_PRIMARY_REGION"
           cleanup_region "$DR_REGION"
 
-      - name: Remove stale Terraform state entries
-        working-directory: terraform
-        run: |
-          terraform state rm \
-            'module.primary_alb.aws_lb.this' \
-            'module.primary_alb.aws_lb_target_group.this' \
-            'module.primary_alb.aws_lb_listener.http' \
-            'module.primary_efs.aws_efs_file_system.this' \
-            'module.primary_efs.aws_efs_mount_target.this[0]' \
-            'module.primary_efs.aws_efs_mount_target.this[1]' \
-            'module.primary_asg.aws_launch_template.this' \
-            'module.primary_asg.aws_autoscaling_group.this' \
-            'module.dr_alb.aws_lb.this' \
-            'module.dr_alb.aws_lb_target_group.this' \
-            'module.dr_alb.aws_lb_listener.http' \
-            'module.dr_efs.aws_efs_file_system.this' \
-            'module.dr_efs.aws_efs_mount_target.this[0]' \
-            'module.dr_efs.aws_efs_mount_target.this[1]' \
-            'module.dr_asg.aws_launch_template.this' \
-            'module.dr_asg.aws_autoscaling_group.this' || true
-
       - name: Terraform validate
         working-directory: terraform
         run: terraform validate
