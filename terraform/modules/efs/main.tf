@@ -28,10 +28,10 @@ resource "aws_efs_file_system" "this" {
 }
 
 resource "aws_efs_mount_target" "this" {
-  for_each = toset(var.subnet_ids)
+  count = length(var.subnet_ids)
 
   file_system_id  = aws_efs_file_system.this.id
-  subnet_id       = each.value
+  subnet_id       = var.subnet_ids[count.index]
   security_groups = [var.security_group_id]
 }
 
@@ -40,5 +40,5 @@ output "file_system_id" {
 }
 
 output "mount_target_ids" {
-  value = values(aws_efs_mount_target.this)[*].id
+  value = aws_efs_mount_target.this[*].id
 }
