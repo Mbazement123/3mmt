@@ -61,9 +61,8 @@ jobs:
 
       - name: Report completion
         if: success()
-        env:
-          DESTROY_REASON: ${{ inputs.reason || 'not provided' }}
-        run: 'echo "Terraform Cloud workspace infrastructure has been destroyed. Reason: ${DESTROY_REASON}"'
+        run: |
+          echo "Terraform Cloud workspace infrastructure has been destroyed. Reason: ${{ inputs.reason || 'not provided' }}"
 
   invalid-confirmation:
     name: Reject missing confirmation
