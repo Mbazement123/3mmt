@@ -1,73 +1,138 @@
-data "aws_vpc" "existing" {
-  id = var.target_vpc_id
+locals {
+  primary_vpc_id        = var.create_primary_vpc ? module.primary_network.vpc_id : var.primary_vpc_id
+  primary_subnets       = var.create_primary_vpc ? module.primary_network.public_subnet_ids : var.primary_subnet_ids
+  dr_vpc_id             = var.create_dr_vpc ? module.dr_network.vpc_id : var.dr_vpc_id
+  dr_subnets            = var.create_dr_vpc ? module.dr_network.public_subnet_ids : var.dr_subnet_ids
+  primary_ami_copy_name = "${var.project_name}-dr-ami"
 }
 
-data "aws_subnet" "existing" {
-  id = var.target_subnet_id
+module "primary_network" {
+  count  = var.create_primary_vpc ? 1 : 0
+  source = "./modules/networking"
+
+  name       = "${var.project_name}-primary"
+  cidr_block = var.vpc_cidr_primary
+  azs        = var.primary_azs
 }
 
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]
+module "dr_network" {
+  count  = var.create_dr_vpc ? 1 : 0
+  source = "./modules/networking"
 
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  providers = {
+    aws = aws.dr
   }
 
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
+  name       = "${var.project_name}-dr"
+  cidr_block = var.vpc_cidr_dr
+  azs        = var.dr_azs
 }
 
-resource "aws_key_pair" "k8s_key" {
-  key_name   = "k8s-dr-project-key"
-  public_key = var.ssh_public_key
+module "primary_security" {
+  source = "./modules/security"
+
+  name   = "${var.project_name}-primary"
+  vpc_id = local.primary_vpc_id
 }
 
-resource "aws_security_group" "vm_sg" {
-  name        = "k8s-automated-dr-sg"
-  description = "Allow SSH and node port access for the DR target node"
-  vpc_id      = data.aws_vpc.existing.id
+module "dr_security" {
+  source = "./modules/security"
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  providers = {
+    aws = aws.dr
   }
 
-  ingress {
-    from_port   = 30000
-    to_port     = 32767
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  name   = "${var.project_name}-dr"
+  vpc_id = local.dr_vpc_id
 }
 
-resource "aws_instance" "k8s_vm" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t3.small"
-  subnet_id                   = data.aws_subnet.existing.id
-  vpc_security_group_ids      = [aws_security_group.vm_sg.id]
-  key_name                    = aws_key_pair.k8s_key.key_name
-  associate_public_ip_address = true
+module "primary_efs" {
+  source = "./modules/efs"
 
-  root_block_device {
-    volume_size           = 50
-    volume_type           = "gp3"
-    delete_on_termination = true
+  name              = "${var.project_name}-primary"
+  subnet_ids        = local.primary_subnets
+  security_group_id = module.primary_security.efs_security_group_id
+}
+
+module "dr_efs" {
+  source = "./modules/efs"
+
+  providers = {
+    aws = aws.dr
   }
 
-  tags = {
-    Name = "Automated-DR-Target-Node"
+  name              = "${var.project_name}-dr"
+  subnet_ids        = local.dr_subnets
+  security_group_id = module.dr_security.efs_security_group_id
+}
+
+module "primary_alb" {
+  source = "./modules/alb"
+
+  name              = "${var.project_name}-primary"
+  vpc_id            = local.primary_vpc_id
+  subnet_ids        = local.primary_subnets
+  security_group_id = module.primary_security.alb_security_group_id
+  target_port       = var.target_port
+}
+
+module "dr_alb" {
+  source = "./modules/alb"
+
+  providers = {
+    aws = aws.dr
   }
+
+  name              = "${var.project_name}-dr"
+  vpc_id            = local.dr_vpc_id
+  subnet_ids        = local.dr_subnets
+  security_group_id = module.dr_security.alb_security_group_id
+  target_port       = var.target_port
+}
+
+resource "aws_ami_copy" "dr_ami" {
+  provider = aws.dr
+
+  name              = local.primary_ami_copy_name
+  source_ami_id     = var.app_ami_id
+  source_ami_region = var.primary_region
+  encrypted         = true
+}
+
+module "primary_asg" {
+  source = "./modules/asg"
+
+  name               = "${var.project_name}-primary-asg"
+  vpc_subnet_ids     = local.primary_subnets
+  security_group_ids = [module.primary_security.app_security_group_id]
+  target_group_arn   = module.primary_alb.target_group_arn
+  efs_file_system_id = module.primary_efs.file_system_id
+  region             = var.primary_region
+  ami_id             = var.app_ami_id
+  instance_type      = var.instance_type
+  key_name           = var.key_name
+  min_size           = 2
+  max_size           = 4
+  desired_capacity   = 2
+}
+
+module "dr_asg" {
+  source = "./modules/asg"
+
+  providers = {
+    aws = aws.dr
+  }
+
+  name               = "${var.project_name}-dr-asg"
+  vpc_subnet_ids     = local.dr_subnets
+  security_group_ids = [module.dr_security.app_security_group_id]
+  target_group_arn   = module.dr_alb.target_group_arn
+  efs_file_system_id = module.dr_efs.file_system_id
+  region             = var.dr_region
+  ami_id             = aws_ami_copy.dr_ami.id
+  instance_type      = var.instance_type
+  key_name           = var.key_name
+  min_size           = 2
+  max_size           = 4
+  desired_capacity   = 2
 }

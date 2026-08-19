@@ -1,60 +1,56 @@
-name: TFC State and Ansible Observability Deployment
+name: Terraform Cloud + AWS Multi-Region Deploy
 
 on:
+  push:
+    branches:
+      - main
+      - master
   pull_request:
     branches:
       - main
       - master
 
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-state
+  cancel-in-progress: false
+
 jobs:
-  orchestrate:
+  terraform:
+    name: Terraform Validate, Plan, Apply
     runs-on: ubuntu-latest
+
+    env:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+
     steps:
-      - name: Checkout Source Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Authenticate to AWS
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-north-1
-
-      - name: Setup Terraform CLI
+      - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
+          terraform_version: 1.6.6
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
-      - name: Terraform Init and Apply
-        id: tf_step
+      - name: Terraform init
         working-directory: terraform
-        env:
-          TF_VAR_target_vpc_id: ${{ vars.MY_VPC_ID }}
-          TF_VAR_target_subnet_id: ${{ vars.MY_SUBNET_ID }}
-          TF_VAR_ssh_public_key: ${{ secrets.VM_SSH_PUBLIC_KEY }}
-        run: |
-          terraform init -input=false
-          terraform apply -auto-approve -input=false
-          echo "VM_IP=$(terraform output -raw vm_public_ip)" >> $GITHUB_ENV
+        run: terraform init
 
-      - name: Install Ansible and K8s Requirements
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible python3-pip
-          pip3 install kubernetes
-          ansible-galaxy collection install kubernetes.core
+      - name: Terraform validate
+        working-directory: terraform
+        run: terraform validate
 
-      - name: Build Ansible Environment
-        working-directory: ansible
-        run: |
-          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
-          echo "[target_vm]" > inventory.ini
-          echo "${{ env.VM_IP }} ansible_user=ubuntu ansible_ssh_private_key_file=${{ github.workspace }}/ansible/private_key.pem" >> inventory.ini
+      - name: Terraform plan
+        working-directory: terraform
+        run: terraform plan -out=tfplan
 
-      - name: Execute Server Configuration & Observability Setup
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
-        run: |
-          make site-deploy
+      - name: Terraform apply
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan

@@ -12,7 +12,7 @@ services:
     ports:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - /opt/app/data:/var/lib/postgresql/data
     healthcheck:
       test:
         ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-biodata} -d ${POSTGRES_DB:-biodata}"]
@@ -76,5 +76,3 @@ services:
       retries: 24
       start_period: 15s
 
-volumes:
-  db_data:

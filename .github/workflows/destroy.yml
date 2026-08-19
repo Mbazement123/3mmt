@@ -1,0 +1,75 @@
+name: Terraform Cloud + AWS Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DESTROY to confirm removal of all Terraform-managed infrastructure
+        required: true
+        type: string
+      reason:
+        description: Reason for destroying the environment
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-state
+  cancel-in-progress: false
+
+env:
+  TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+  TF_IN_AUTOMATION: true
+
+jobs:
+  destroy:
+    name: Plan and destroy Terraform infrastructure
+    runs-on: ubuntu-latest
+    environment: terraform-destroy
+    if: inputs.confirmation == 'DESTROY'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Create destroy plan
+        working-directory: terraform
+        run: terraform plan -destroy -out=tfplan
+
+      - name: Apply destroy plan
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Report completion
+        if: success()
+        run: echo "Terraform Cloud workspace infrastructure has been destroyed. Reason: ${{ inputs.reason || 'not provided' }}"
+
+  invalid-confirmation:
+    name: Reject missing confirmation
+    runs-on: ubuntu-latest
+    if: inputs.confirmation != 'DESTROY'
+
+    steps:
+      - name: Fail without confirmation
+        run: |
+          echo "Destruction was not run. The confirmation input must be exactly DESTROY."
+          exit 1
