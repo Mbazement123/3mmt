@@ -64,11 +64,20 @@ resource "aws_launch_template" "this" {
     #!/bin/bash
     set -euo pipefail
 
-    systemctl enable --now docker
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y amazon-efs-utils
     mkdir -p /opt/app/data
-    mountpoint -q /opt/app/data || mount -t efs -o tls,region=${var.region} ${var.efs_file_system_id}:/ /opt/app/data
-    cd /opt/app
-    /usr/bin/docker compose up -d
+
+    for attempt in {1..12}; do
+      if mountpoint -q /opt/app/data || mount -t efs -o tls,region=${var.region} ${var.efs_file_system_id}:/ /opt/app/data; then
+        exit 0
+      fi
+      sleep 10
+    done
+
+    echo "EFS mount did not become available during cloud-init" >&2
+    exit 1
   EOT
   )
 
