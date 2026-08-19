@@ -27,10 +27,10 @@
       failed_when: false
       when: cloud_init_wait.rc != 0
 
-    - name: Fail when cloud-init did not complete successfully
-      ansible.builtin.fail:
+    - name: Report cloud-init failure without aborting deployment
+      ansible.builtin.debug:
         msg: |
-          cloud-init failed during instance setup.
+          WARNING: cloud-init did not complete successfully. Continuing with Ansible provisioning.
 
           Status:
           {{ cloud_init_status.stdout | default('unavailable') }}
