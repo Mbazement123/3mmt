@@ -66,11 +66,11 @@ resource "aws_launch_template" "this" {
 
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y amazon-efs-utils
+    apt-get install -y nfs-common
     mkdir -p /opt/app/data
 
     for attempt in {1..12}; do
-      if mountpoint -q /opt/app/data || mount -t efs -o tls,region=${var.region} ${var.efs_file_system_id}:/ /opt/app/data; then
+      if mountpoint -q /opt/app/data || mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${var.efs_file_system_id}.efs.${var.region}.amazonaws.com:/ /opt/app/data; then
         exit 0
       fi
       sleep 10
@@ -80,7 +80,7 @@ resource "aws_launch_template" "this" {
     exit 1
   EOT
   )
-
+  
   network_interfaces {
     associate_public_ip_address = true
     security_groups             = var.security_group_ids
