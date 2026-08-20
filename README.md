@@ -1,241 +1,377 @@
-# biodata
+# Multi-Region Biodata Platform
 
-A small full-stack app for capturing and listing **biodata records** (name, contact,
-date of birth, sex, height/weight, blood type, notes). It is deliberately built as
-three separable pieces so the whole thing runs with one `docker compose up`:
+Production-oriented DevOps submission for deploying a highly available biodata
+application across two AWS regions. Terraform provisions the infrastructure,
+Ansible configures the EC2 hosts and deploys the application, and AWS Global
+Accelerator provides a stable global entry point with health-based regional
+failover.
 
-- **`backend/`** — Python 3.12 / FastAPI service backed by Postgres 16
-  (SQLAlchemy 2.x, psycopg 3, Alembic, pydantic v2). Owns the data and the
-  validation rules.
-- **`frontend/`** — Next.js 15 App Router UI (TypeScript strict, Tailwind CSS v4).
-  The browser **never** talks to the Python service directly; the Next app proxies
-  through its own route handlers under `/api/*`.
-- **`db`** — Postgres 16, one named volume, published on host port **5433** so it
-  does not collide with a Postgres you may already run locally.
+## Architecture Overview
 
-The one behaviour worth calling out up front: **creating a record is replay-safe**.
-See [Idempotency](#idempotency-guarantee).
+The primary region is `eu-north-1` and the secondary/DR region is `us-west-2`
+by default. Both regions contain a VPC, public subnets, an Application Load
+Balancer, an Auto Scaling Group, EC2 application instances, and an encrypted EFS
+filesystem. AWS Backup protects each regional EFS filesystem with a daily backup
+plan and 35-day retention by default.
 
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-    subgraph browser["Browser"]
-        UI["Next.js UI<br/>(client components)"]
-    end
-
-    subgraph frontendc["frontend container :3000"]
-        RH["Route handlers<br/>/api/bio-records"]
-    end
-
-    subgraph backendc["backend container :8000"]
-        API["FastAPI<br/>/api/v1/bio-records<br/>/health"]
-        MIG["Alembic migrations<br/>(run at startup)"]
-    end
-
-    subgraph dbc["db container :5432 → host 5433"]
-        PG[("Postgres 16<br/>bio_records")]
-    end
-
-    UI -->|"fetch + Idempotency-Key"| RH
-    RH -->|"BACKEND_URL=http://backend:8000"| API
-    API -->|"DATABASE_URL (psycopg 3)"| PG
-    MIG --> PG
-
-    classDef box fill:#0d1117,stroke:#30363d,color:#e6edf3;
+```text
+                         +----------------------+
+                         |       End user       |
+                         +----------+-----------+
+                                    |
+                                    v
+                    +-------------------------------+
+                    |    AWS Global Accelerator    |
+                    |  static IPs + health checks  |
+                    +---------------+---------------+
+                                    |
+                +-------------------+-------------------+
+                |                                       |
+       healthy primary endpoint                 secondary endpoint
+                |                                       |
+                v                                       v
+      +---------------------+                 +---------------------+
+      | Primary ALB         |                 | Secondary ALB       |
+      | eu-north-1          |                 | us-west-2           |
+      +----------+----------+                 +----------+----------+
+                 |                                       |
+                 v                                       v
+      +---------------------+                 +---------------------+
+      | Primary ASG / EC2   |                 | Secondary ASG / EC2 |
+      | Docker application  |                 | Docker application   |
+      +----------+----------+                 +----------+----------+
+                 |                                       |
+                 v                                       v
+            Primary EFS                         Secondary EFS
+            + AWS Backup                        + AWS Backup
 ```
 
-Startup order is enforced by compose: `db` must pass its `pg_isready`
-healthcheck before `backend` starts, and `backend` must pass `/health` before
-`frontend` starts.
+Global Accelerator has TCP listeners on ports `80` and `443`. TLS termination,
+when configured, remains the responsibility of the ALB. Endpoint groups use
+HTTP health checks on port `80` and path `/`. If the primary ALB endpoint is
+unhealthy, traffic is sent to the secondary endpoint.
 
----
+## Prerequisites and Tooling
 
-## Quickstart (Docker)
+Install the following tools locally or in the CI runner:
 
-Requires Docker Engine 24+ with the Compose v2 plugin.
+- Terraform `>= 1.6.0`
+- AWS CLI v2
+- Ansible Core
+- Python 3.12 for the application tooling
+- Docker Engine with Docker Compose v2
+- Git
+
+The AWS identity used by Terraform needs permission to manage the resources in
+this project, including:
+
+- VPC, subnet, route table, internet gateway, security group
+- EC2, AMI copy, Auto Scaling, and key-pair lookup
+- Application Load Balancer
+- EFS and mount targets
+- Global Accelerator
+- AWS Backup vaults, plans, selections, and recovery points
+- IAM role creation and policy attachment for AWS Backup
+- CloudWatch alarms and SNS topics/subscriptions
+
+The deployment also requires an existing EC2 key pair with the same name in
+both regions. The default key pair name is `biodata-deploy`. Do not commit a
+private key or AWS credentials.
+
+## Repository Structure
+
+```text
+.
+├── .github/workflows/
+│   ├── deploy.yml                    # Terraform validation, plan, and apply
+│   ├── app-setup.yml                 # Ansible deployment to EC2 hosts
+│   ├── test-primary-alb-failover.yml # Controlled primary failure test
+│   └── destroy.yml                   # Approved Terraform teardown
+├── ansible/
+│   ├── inventory.ini                 # Runtime host inventory
+│   ├── site.yml                      # Main configuration playbook
+│   └── roles/
+│       ├── common/                   # Docker, EFS support, host setup
+│       └── app/                      # Application files and Compose startup
+├── backend/                          # FastAPI service, migrations, and tests
+├── frontend/                         # Next.js application
+├── terraform/
+│   ├── main.tf                       # Regional infrastructure composition
+│   ├── provider.tf                   # Primary, DR, and Global Accelerator providers
+│   ├── variable.tf                   # Deployment inputs and defaults
+│   ├── output.tf                     # ALB, GA, EFS, and backup outputs
+│   ├── monitoring.tf                 # CloudWatch alarms and SNS notifications
+│   └── modules/
+│       ├── networking/               # VPC, subnets, routes, internet gateway
+│       ├── security/                 # Regional security groups
+│       ├── alb/                      # ALB, listeners, and target groups
+│       ├── asg/                      # EC2 launch template and Auto Scaling
+│       ├── efs/                      # Encrypted EFS and mount targets
+│       ├── efs-backup/               # AWS Backup vault and daily plan
+│       └── global-accelerator/       # Accelerator, listeners, and endpoint groups
+├── docker-compose.yml                # Local and host application orchestration
+├── Makefile                          # Common local and Ansible commands
+└── CONTRACT.md                       # Application API and data contract
+```
+
+## Configuration
+
+Terraform variables can be supplied with `-var`, a `terraform.tfvars` file, or
+environment variables using the `TF_VAR_` prefix. Important defaults are:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `primary_region` | `eu-north-1` | Primary AWS region |
+| `dr_region` | `us-west-2` | Secondary/DR AWS region |
+| `global_accelerator_region` | `us-west-2` | Provider region for GA API operations |
+| `project_name` | `biodata` | Resource name prefix |
+| `key_name` | `biodata-deploy` | Existing EC2 key pair name |
+| `instance_type` | `t3.medium` | EC2 instance type |
+| `target_port` | `3000` | Application port behind the ALBs |
+| `alert_email` | `null` | Optional SNS email subscription |
+
+For a non-default deployment, create a local `terraform/terraform.tfvars` file
+and do not commit secrets:
+
+```hcl
+project_name       = "biodata"
+primary_region     = "eu-north-1"
+dr_region          = "us-west-2"
+key_name           = "biodata-deploy"
+alert_email        = "operations@example.com"
+```
+
+## Deployment Execution
+
+### Phase 1: Provision Infrastructure with Terraform
+
+Authenticate the AWS CLI using an IAM role, environment variables, or an AWS
+profile. Confirm both regions and the active account before applying:
 
 ```bash
-cp .env.example .env      # defaults work as-is for local use
-make up                   # == docker compose up -d --build
+aws sts get-caller-identity
+aws configure list
+
+cd terraform
+terraform init
+terraform fmt -check -recursive
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
 ```
 
-Then:
+The apply creates the primary and secondary networking, security groups, EFS,
+ALBs, Auto Scaling Groups, AMI copy, Global Accelerator, CloudWatch alarms,
+SNS topics, and AWS Backup plans.
 
-| what              | where                                   |
-|-------------------|-----------------------------------------|
-| UI                | http://localhost:3000                   |
-| API health        | http://localhost:8000/health            |
-| API records       | http://localhost:8000/api/v1/bio-records|
-| Postgres          | `localhost:5433` (user/pass `biodata`)  |
-
-Useful targets:
+Save the access values from Terraform:
 
 ```bash
-make logs      # follow all service logs
-make migrate   # run `alembic upgrade head` against the running stack
-make build     # build both images
-make down      # stop and drop volumes
-make clean     # down + remove local images and caches
+terraform output global_accelerator_dns_name
+terraform output global_accelerator_ip_addresses
+terraform output primary_alb_dns_name
+terraform output dr_alb_dns_name
+terraform output primary_efs_backup_vault
+terraform output dr_efs_backup_vault
 ```
 
-The backend container runs migrations then serves, via the compose `command`:
+### Phase 2: Configure Hosts and Deploy the Application with Ansible
 
+Terraform creates the EC2 hosts, but Ansible installs/configures Docker and
+deploys the Compose application. The normal CI workflow discovers a live host
+and writes the runtime inventory. For a local run, update
+`ansible/inventory.ini` with a reachable EC2 public IP and the correct SSH key:
+
+```ini
+[target_vm]
+primary ansible_host=PRIMARY_EC2_PUBLIC_IP ansible_user=ubuntu \
+  ansible_ssh_private_key_file=/path/to/biodata-deploy.pem
 ```
-sh -c "uv run alembic upgrade head && uv run python -m biodata"
-```
 
----
-
-## Local dev without Docker
-
-Start just Postgres, then run each service on the host:
+Run the full playbook against each regional host or inventory group:
 
 ```bash
-docker compose up -d db          # Postgres on localhost:5433
+ansible-playbook -i ansible/inventory.ini ansible/site.yml
 ```
 
-**Backend** (cwd `backend/`, needs [uv](https://docs.astral.sh/uv/)):
+To force application provisioning when the readiness checks detect an existing
+installation:
 
 ```bash
-uv sync --frozen
-export DATABASE_URL=postgresql+psycopg://biodata:biodata@localhost:5433/biodata
-uv run alembic upgrade head
-uv run uvicorn biodata.app:app --reload --port 8000
+ansible-playbook -i ansible/inventory.ini ansible/site.yml -e force_deploy=true
 ```
 
-**Frontend** (cwd `frontend/`, Node 22):
+The repository also provides equivalent Make targets:
 
 ```bash
-npm ci
-BACKEND_URL=http://localhost:8000 npm run dev
+make site-deploy
+make app-deploy
 ```
 
-Checks, mirroring CI exactly:
+Repeat the host configuration for the secondary region. Both regions must have
+a healthy ALB target before failover testing.
+
+### Phase 3: Access the Application Through Global Accelerator
+
+Global Accelerator provides the stable DNS name. Retrieve it from Terraform and
+open it in a browser or use it in a health request:
 
 ```bash
-# backend/
-uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run pytest -q
-# frontend/
-npm run lint && npm run typecheck && npm run build && npm test
-# both, from the repo root:
-make lint && make test
+GA_DNS_NAME=$(terraform -chdir=terraform output -raw global_accelerator_dns_name)
+echo "https://${GA_DNS_NAME}"
+curl -i "http://${GA_DNS_NAME}/health"
 ```
 
----
+The application health endpoint is `/health`. The ALB and Global Accelerator
+health checks use `/` as configured by the Terraform module; the application
+must return a successful response at that path for the endpoint to remain
+healthy.
 
-## Environment variables
+## Failover and High Availability Demonstration
 
-Copy `.env.example` → `.env`. Nothing secret is committed; compose reads `.env`
-and falls back to the defaults shown below.
+This is the grading proof for regional failover. Perform it during a controlled
+test window because it intentionally removes the primary service from traffic.
 
-| variable             | service   | default                                                      | notes |
-|----------------------|-----------|--------------------------------------------------------------|-------|
-| `POSTGRES_USER`      | db        | `biodata`                                                    | |
-| `POSTGRES_PASSWORD`  | db        | `biodata`                                                    | change for anything non-local |
-| `POSTGRES_DB`        | db        | `biodata`                                                    | |
-| `POSTGRES_HOST_PORT` | db        | `5433`                                                       | host port mapped to container `5432` |
-| `DATABASE_URL`       | backend   | `postgresql+psycopg://biodata:biodata@db:5432/biodata`       | SQLAlchemy URL; use `localhost:5433` off-compose |
-| `CORS_ORIGINS`       | backend   | `http://localhost:3000`                                      | comma separated |
-| `LOG_LEVEL`          | backend   | `INFO`                                                       | |
-| `BACKEND_HOST_PORT`  | backend   | `8000`                                                       | |
-| `BACKEND_URL`        | frontend  | `http://backend:8000`                                        | **server-side only**, never exposed to the browser |
-| `FRONTEND_HOST_PORT` | frontend  | `3000`                                                       | |
-| `TEST_DATABASE_URL`  | tests/CI  | see `.env.example`                                           | database the backend test suite targets |
+### 1. Confirm both endpoints are healthy
 
----
-
-## HTTP API
-
-Backend, prefix `/api/v1` (health is bare `/health`):
-
-| method | path                       | notes |
-|--------|----------------------------|-------|
-| GET    | `/health`                  | `200 {"status":"ok","database":"ok"}`; `503` with `"database":"error"` if the DB ping fails |
-| POST   | `/api/v1/bio-records`      | requires `Idempotency-Key` header (8..128 chars). `201` created · `200` replay of an identical body · `409` same key with a *different* body · `422` validation error |
-| GET    | `/api/v1/bio-records`      | `?limit=` (1..100, default 20) `&offset=` (>= 0, default 0) → `{"items":[…],"total":int,"limit":int,"offset":int}`, ordered `created_at DESC` |
-| GET    | `/api/v1/bio-records/{id}` | `200` record · `404` unknown id |
-
-Frontend proxy route handlers (what the browser actually calls):
-
-| method | path                  | forwards to |
-|--------|-----------------------|-------------|
-| POST   | `/api/bio-records`    | `POST /api/v1/bio-records`, passing through the client-generated `Idempotency-Key` and the backend's status + JSON verbatim |
-| GET    | `/api/bio-records`    | `GET /api/v1/bio-records?limit=&offset=` |
-
-A record stores the columns of `bio_records`; `age` and `bmi` are **derived on
-read** and never stored.
-
-Example:
+Check the Global Accelerator listener and endpoint groups in the AWS console, or
+use the CLI:
 
 ```bash
-curl -i -X POST http://localhost:8000/api/v1/bio-records \
-  -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{
-    "full_name": "Ada Lovelace",
-    "email": "ada@example.com",
-    "date_of_birth": "1990-05-02",
-    "sex": "female",
-    "height_cm": 170.0,
-    "weight_kg": 62.5,
-    "blood_type": "O+",
-    "country": "NG"
-  }'
+GA_ARN=$(aws globalaccelerator list-accelerators \
+  --query 'Accelerators[?Name==`biodata-global`].AcceleratorArn | [0]' \
+  --output text)
+
+aws globalaccelerator describe-accelerator --accelerator-arn "$GA_ARN"
+aws globalaccelerator list-listeners --accelerator-arn "$GA_ARN"
 ```
 
----
+Confirm that the primary and secondary ALB target groups are healthy before
+starting the test.
 
-## Idempotency guarantee
+### 2. Stop the primary application instance
 
-`POST /api/v1/bio-records` is safe to retry. The client generates an
-`Idempotency-Key` (`crypto.randomUUID()`) once per logical submission and sends it
-on every attempt, including retries.
+Identify the primary Auto Scaling Group instance:
 
-- The table has a **UNIQUE constraint on `idempotency_key`**, and the insert uses
-  on-conflict handling — not a read-then-write, which would race under concurrency.
-- First request with a key → **`201`** and the new record.
-- Same key, byte-identical body → **`200`** and the *same* record, unchanged. No
-  duplicate row, no second side effect.
-- Same key, different body → **`409 idempotency_key_reuse`**, so a key is never
-  silently reused for different data.
+```bash
+PRIMARY_INSTANCE_ID=$(aws autoscaling describe-auto-scaling-groups \
+  --region eu-north-1 \
+  --auto-scaling-group-names biodata-primary-asg \
+  --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId | [0]' \
+  --output text)
 
-This is verified in CI, not just documented: the `compose-smoke` job POSTs the same
-payload twice with one key against the real stack and fails unless the first is
-`201`, the second is `200`, and both return an identical `id`.
-
----
-
-## How CI works
-
-`.github/workflows/ci.yml` runs on every push and pull request, with
-`concurrency` cancelling superseded runs and `permissions: contents: read`.
-
-| job             | what it does |
-|-----------------|--------------|
-| `backend`       | `postgres:16` service container (health-gated), `TEST_DATABASE_URL` set, uv installed via `astral-sh/setup-uv` with caching, then `uv sync --frozen` → `ruff check` → `ruff format --check` → `mypy src` → `pytest -q` |
-| `frontend`      | `actions/setup-node@v4`, Node 22, npm cache, then `npm ci` → `npm run lint` → `npm run typecheck` → `npm run build` → `npm test` |
-| `docker`        | builds **both** images with buildx / `docker/build-push-action` using GitHub Actions layer cache. **Build only — nothing is pushed.** |
-| `compose-smoke` | needs the three above; `docker compose up -d --build`, waits for `/health` and the frontend to answer, runs the idempotent-replay assertion, dumps `docker compose logs` on failure, and `docker compose down -v` always |
-
-`.github/dependabot.yml` keeps uv, npm, Docker base images and GitHub Actions
-up to date on a weekly cadence.
-
----
-
-## Repo layout
-
+aws ec2 stop-instances \
+  --region eu-north-1 \
+  --instance-ids "$PRIMARY_INSTANCE_ID"
 ```
-backend/            FastAPI service (src/biodata, alembic/, tests/)
-  Dockerfile        multi-stage, uv install, non-root, healthchecked
-frontend/           Next.js app (src/app, route handlers under /api)
-  Dockerfile        multi-stage node:22-alpine, non-root
-docker-compose.yml  db + backend + frontend
-Makefile            up / down / logs / migrate / test / lint / build / clean
-.github/            CI workflow + dependabot
-.env.example        every knob, with safe local defaults
-CONTRACT.md         the shared spec all three services are built against
+
+Because the Auto Scaling Group is designed to replace failed instances, stopping
+one instance normally demonstrates **instance recovery**. To demonstrate
+**cross-region Global Accelerator failover**, temporarily make the primary ALB
+unhealthy by stopping or isolating all primary application targets, or set the
+primary ASG desired capacity to zero during the controlled test. Do not leave
+the primary ASG at zero after the test.
+
+The existing workflow
+`.github/workflows/test-primary-alb-failover.yml` provides a safer replacement
+test. It requires explicit confirmation, terminates one primary instance,
+waits for Auto Scaling to launch a replacement, and verifies that the new target
+becomes healthy.
+
+### 3. Observe health detection and rerouting
+
+Poll the primary ALB target health while requesting the Global Accelerator DNS
+name repeatedly:
+
+```bash
+for attempt in {1..30}; do
+  date -u
+  curl --silent --show-error --connect-timeout 5 \
+    -o /dev/null -w 'HTTP %{http_code}\n' \
+    "http://${GA_DNS_NAME}/health" || true
+  sleep 10
+done
 ```
-# tsexample
+
+In the AWS console, observe the primary endpoint group transition to unhealthy
+and the secondary endpoint receive traffic. The expected result is that the
+Global Accelerator DNS name continues responding while traffic is served by
+the secondary ALB after health-check detection. Some connection retries may be
+needed during convergence; the design avoids requiring a DNS change.
+
+### 4. Restore the primary region
+
+Start the stopped instance or restore the primary ASG desired capacity, then
+wait for the primary ALB target and Global Accelerator endpoint to become
+healthy again:
+
+```bash
+aws autoscaling update-auto-scaling-group \
+  --region eu-north-1 \
+  --auto-scaling-group-name biodata-primary-asg \
+  --desired-capacity 1
+```
+
+Verify both regional target groups are healthy before ending the test.
+
+## EFS Backup and Recovery
+
+Terraform creates one AWS Backup vault and daily backup plan per region. The
+default retention is 35 days. Inspect recovery points with:
+
+```bash
+aws backup list-backup-vaults --region eu-north-1
+aws backup list-recovery-points-by-backup-vault \
+  --region eu-north-1 \
+  --backup-vault-name biodata-primary-efs-vault
+```
+
+The backup configuration protects EFS recovery points. It does not replicate a
+live EFS filesystem between regions; a cross-region restore remains an explicit
+recovery operation and should be tested as part of the organization's recovery
+runbook.
+
+## Cleanup and Destruction
+
+Destroying the Terraform workspace removes the Terraform-managed infrastructure
+including both regional stacks, Global Accelerator, backup plans, and backup
+vaults. Ensure required recovery points and application data have been retained
+before destruction.
+
+From the Terraform directory:
+
+```bash
+terraform plan -destroy
+terraform destroy
+```
+
+For CI-managed environments, use the protected GitHub Actions destroy workflow.
+It requires the workflow confirmation value and may require approval from the
+`terraform-destroy` environment reviewers.
+
+## Local Application Development
+
+The application can also run locally without AWS:
+
+```bash
+make up
+```
+
+Then open `http://localhost:3000`. The backend health endpoint is available at
+`http://localhost:8000/health`. Run the project checks with:
+
+```bash
+make lint
+make test
+```
+
+## Security and Operational Notes
+
+- Keep AWS credentials, Terraform Cloud tokens, SSH private keys, and
+  `terraform.tfvars` secrets out of Git.
+- Restrict SSH access and application security-group ingress for production use.
+- Confirm SNS email subscriptions after configuring `alert_email`.
+- Define formal recovery time and recovery point objectives before production
+  adoption.
+- Test both instance replacement and regional failover regularly; they validate
+  different parts of the design.
