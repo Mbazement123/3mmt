@@ -2,18 +2,7 @@ name: Test Primary ALB Failover
 
 "on":
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: Type DELETE_PRIMARY to terminate the current primary ASG instance
-        required: true
-        type: string
-
-permissions:
-  contents: read
-
-concurrency:
-  group: primary-alb-failover
-  cancel-in-progress: false
+   
 
 env:
   PRIMARY_REGION: eu-north-1
