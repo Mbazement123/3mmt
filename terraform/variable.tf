@@ -53,9 +53,14 @@ variable "instance_type" {
 }
 
 variable "key_name" {
-  description = "Optional existing EC2 SSH key pair name"
+  description = "EC2 key pair name for firewall-webserver.pem; it must exist in both configured regions"
   type        = string
-  default     = null
+  default     = "firewall-webserver"
+
+  validation {
+    condition     = trimspace(var.key_name) != ""
+    error_message = "key_name must name an existing EC2 key pair in both configured regions."
+  }
 }
 
 variable "alert_email" {
