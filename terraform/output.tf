@@ -38,6 +38,16 @@ output "dr_efs_id" {
   value       = module.dr_efs.file_system_id
 }
 
+output "primary_efs_backup_vault" {
+  description = "AWS Backup vault for the primary EFS file system"
+  value       = module.primary_efs_backup.vault_name
+}
+
+output "dr_efs_backup_vault" {
+  description = "AWS Backup vault for the DR EFS file system"
+  value       = module.dr_efs_backup.vault_name
+}
+
 output "primary_asg_name" {
   description = "Primary ASG name"
   value       = module.primary_asg.asg_name

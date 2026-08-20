@@ -76,6 +76,26 @@ module "dr_efs" {
   security_group_id = module.dr_security.efs_security_group_id
 }
 
+module "primary_efs_backup" {
+  source = "./modules/efs-backup"
+
+  efs_file_system_arn = module.primary_efs.file_system_arn
+  backup_role_arn     = aws_iam_role.backup.arn
+  name                = "${var.project_name}-primary-efs"
+}
+
+module "dr_efs_backup" {
+  source = "./modules/efs-backup"
+
+  providers = {
+    aws = aws.dr
+  }
+
+  efs_file_system_arn = module.dr_efs.file_system_arn
+  backup_role_arn     = aws_iam_role.backup.arn
+  name                = "${var.project_name}-dr-efs"
+}
+
 module "primary_alb" {
   source = "./modules/alb"
 
