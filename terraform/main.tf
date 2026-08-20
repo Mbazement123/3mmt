@@ -6,15 +6,6 @@ locals {
   primary_ami_copy_name = "${var.project_name}-dr-ami"
 }
 
-resource "tls_private_key" "deploy" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
 data "aws_key_pair" "primary" {
   key_name = var.key_name
 }
