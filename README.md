@@ -1,6 +1,6 @@
 # Multi-Region Biodata Platform
 
-Production-oriented DevOps submission for deploying a highly available biodata
+Production-oriented DevOps for deploying a highly available biodata
 application across two AWS regions. Terraform provisions the infrastructure,
 Ansible configures the EC2 hosts and deploys the application, and AWS Global
 Accelerator provides a stable global entry point with health-based regional
@@ -109,7 +109,7 @@ project_name       = "biodata"
 primary_region     = "eu-north-1"
 dr_region          = "us-west-2"
 key_name           = "biodata-deploy"
-alert_email        = "operations@example.com"
+alert_email        = "eohoimiracle@gmail.com"
 ```
 
 ## Deployment Execution
