@@ -1,0 +1,132 @@
+name: Test Primary ALB Failover
+
+"on":
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DELETE_PRIMARY to terminate the current primary ASG instance
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primary-alb-failover
+  cancel-in-progress: false
+
+env:
+  PRIMARY_REGION: eu-north-1
+  PRIMARY_ASG: biodata-primary-asg
+  PRIMARY_TARGET_GROUP: biodata-primary-tg
+
+jobs:
+  failover:
+    name: Terminate primary instance and verify ALB replacement
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Require explicit confirmation
+        if: inputs.confirmation != 'DELETE_PRIMARY'
+        run: |
+          echo "Refusing to terminate an instance. Enter DELETE_PRIMARY to continue."
+          exit 1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.PRIMARY_REGION }}
+
+      - name: Identify the current primary instance
+        id: current
+        shell: bash
+        run: |
+          set -euo pipefail
+          instance_id=$(aws autoscaling describe-auto-scaling-groups \
+            --region "$PRIMARY_REGION" \
+            --auto-scaling-group-names "$PRIMARY_ASG" \
+            --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId | [0]' \
+            --output text)
+
+          if [ -z "$instance_id" ] || [ "$instance_id" = "None" ]; then
+            echo "No InService instance found in $PRIMARY_ASG" >&2
+            exit 1
+          fi
+
+          echo "Terminating primary instance: $instance_id"
+          echo "instance_id=$instance_id" >> "$GITHUB_OUTPUT"
+
+      - name: Terminate primary instance and keep desired capacity at one
+        run: |
+          set -euo pipefail
+          aws autoscaling terminate-instance-in-auto-scaling-group \
+            --region "$PRIMARY_REGION" \
+            --instance-id "${{ steps.current.outputs.instance_id }}" \
+            --no-should-decrement-desired-capacity
+
+      - name: Wait for one replacement instance
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            instances=$(aws autoscaling describe-auto-scaling-groups \
+              --region "$PRIMARY_REGION" \
+              --auto-scaling-group-names "$PRIMARY_ASG" \
+              --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
+              --output text)
+            desired=$(aws autoscaling describe-auto-scaling-groups \
+              --region "$PRIMARY_REGION" \
+              --auto-scaling-group-names "$PRIMARY_ASG" \
+              --query 'AutoScalingGroups[0].DesiredCapacity' \
+              --output text)
+
+            count=$(printf '%s\n' "$instances" | awk '{print NF}')
+            if [ "$desired" = "1" ] && [ "$count" -eq 1 ] && [ "$instances" != "${{ steps.current.outputs.instance_id }}" ]; then
+              replacement_id="$instances"
+              echo "Replacement instance is InService: $replacement_id"
+              echo "REPLACEMENT_INSTANCE_ID=$replacement_id" >> "$GITHUB_ENV"
+              exit 0
+            fi
+
+            echo "Waiting for replacement: desired=$desired instances=$instances"
+            sleep 10
+          done
+
+          echo "Timed out waiting for a single replacement instance" >&2
+          exit 1
+
+      - name: Wait for primary ALB target to become healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_group_arn=$(aws elbv2 describe-target-groups \
+            --region "$PRIMARY_REGION" \
+            --names "$PRIMARY_TARGET_GROUP" \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)
+
+          for attempt in {1..60}; do
+            state=$(aws elbv2 describe-target-health \
+              --region "$PRIMARY_REGION" \
+              --target-group-arn "$target_group_arn" \
+              --targets Id="$REPLACEMENT_INSTANCE_ID" \
+              --query 'TargetHealthDescriptions[0].TargetHealth.State' \
+              --output text)
+
+            if [ "$state" = "healthy" ]; then
+              echo "Primary ALB target is healthy on $REPLACEMENT_INSTANCE_ID"
+              exit 0
+            fi
+
+            echo "Waiting for ALB target health: $state"
+            sleep 10
+          done
+
+          aws elbv2 describe-target-health \
+            --region "$PRIMARY_REGION" \
+            --target-group-arn "$target_group_arn" \
+            --targets Id="$REPLACEMENT_INSTANCE_ID"
+          exit 1

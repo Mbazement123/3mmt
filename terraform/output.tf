@@ -18,6 +18,16 @@ output "dr_alb_dns_name" {
   value       = module.dr_alb.alb_dns_name
 }
 
+output "global_accelerator_dns_name" {
+  description = "DNS name of the Global Accelerator"
+  value       = module.global_accelerator.dns_name
+}
+
+output "global_accelerator_ip_addresses" {
+  description = "Static IPv4 addresses assigned to the Global Accelerator"
+  value       = module.global_accelerator.ip_addresses
+}
+
 output "primary_efs_id" {
   description = "Primary EFS file system ID"
   value       = module.primary_efs.file_system_id

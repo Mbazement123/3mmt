@@ -10,6 +10,12 @@ variable "dr_region" {
   default     = "us-west-2"
 }
 
+variable "global_accelerator_region" {
+  description = "AWS provider region used for Global Accelerator API operations"
+  type        = string
+  default     = "us-west-2"
+}
+
 variable "project_name" {
   description = "Name prefix used across AWS resources"
   type        = string

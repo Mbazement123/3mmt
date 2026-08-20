@@ -100,6 +100,20 @@ module "dr_alb" {
   target_port       = var.target_port
 }
 
+module "global_accelerator" {
+  source = "./modules/global-accelerator"
+
+  providers = {
+    aws = aws.global_accelerator
+  }
+
+  name              = "${var.project_name}-global"
+  primary_alb_arn   = module.primary_alb.alb_arn
+  secondary_alb_arn = module.dr_alb.alb_arn
+  primary_region    = var.primary_region
+  secondary_region  = var.dr_region
+}
+
 resource "aws_ami_copy" "dr_ami" {
   provider = aws.dr
 
