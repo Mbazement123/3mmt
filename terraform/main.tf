@@ -112,7 +112,7 @@ module "primary_asg" {
   instance_type      = var.instance_type
   key_name           = var.key_name
   min_size           = 1
-  max_size           = 2
+  max_size           = 1
   desired_capacity   = 1
 }
 

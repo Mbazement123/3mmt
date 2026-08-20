@@ -10,9 +10,9 @@ WORKDIR /app
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false \
     NPM_CONFIG_FUND=false
 
-COPY package.json package-lock.json* ./
+COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+    npm ci || npm install --legacy-peer-deps
 
 ########################################
 # Stage 2 — builder: compile the Next.js app
@@ -39,9 +39,9 @@ WORKDIR /app
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false \
     NPM_CONFIG_FUND=false
 
-COPY package.json package-lock.json* ./
+COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev
+    npm ci --omit=dev || npm install --omit=dev --legacy-peer-deps
 
 ########################################
 # Stage 4 — runner
