@@ -45,6 +45,13 @@
   changed_when: false
   tags: ['app']
 
+- name: Prune unused Docker resources
+  become_user: ubuntu
+  ansible.builtin.command:
+    cmd: docker system prune -f --volumes
+  failed_when: false
+  tags: ['app']
+
 - name: Build the Docker Compose application
   become_user: ubuntu
   ansible.builtin.command:
