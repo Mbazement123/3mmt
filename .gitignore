@@ -3,3 +3,5 @@ node_modules/
 .terraform/
 terraform.tfstate
 terraform.tfstate.backup
+*.pem
+public_key.pub

@@ -9,11 +9,19 @@ locals {
 resource "tls_private_key" "deploy" {
   algorithm = "RSA"
   rsa_bits  = 4096
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_key_pair" "primary" {
   key_name   = var.key_name
   public_key = tls_private_key.deploy.public_key_openssh
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_key_pair" "dr" {
@@ -21,6 +29,10 @@ resource "aws_key_pair" "dr" {
 
   key_name   = var.key_name
   public_key = tls_private_key.deploy.public_key_openssh
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 module "primary_network" {
