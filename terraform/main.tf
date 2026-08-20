@@ -147,5 +147,5 @@ module "dr_asg" {
   region             = var.dr_region
   ami_id             = aws_ami_copy.dr_ami.id
   instance_type      = var.instance_type
-  key_name           = aws_key_pair.dr.key_name
+  key_name           = data.aws_key_pair.dr.key_name
 }
