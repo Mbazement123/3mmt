@@ -2,7 +2,11 @@ name: Test Primary ALB Failover
 
 "on":
   workflow_dispatch:
-    
+    inputs:
+      confirmation:
+        description: Type DELETE_PRIMARY to terminate the current primary ASG instance
+        required: true
+        type: string
 
 env:
   PRIMARY_REGION: eu-north-1
@@ -16,6 +20,12 @@ jobs:
     environment: production
 
     steps:
+      - name: Require explicit confirmation
+        if: inputs.confirmation != 'DELETE_PRIMARY'
+        run: |
+          echo "Refusing to terminate an instance. Enter DELETE_PRIMARY to continue."
+          exit 1
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -54,27 +64,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          old_instance_id="${{ steps.current.outputs.instance_id }}"
+
           for attempt in {1..60}; do
-            instances=$(aws autoscaling describe-auto-scaling-groups \
+            instance_ids=$(aws autoscaling describe-auto-scaling-groups \
               --region "$PRIMARY_REGION" \
               --auto-scaling-group-names "$PRIMARY_ASG" \
               --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`].InstanceId' \
               --output text)
-            desired=$(aws autoscaling describe-auto-scaling-groups \
-              --region "$PRIMARY_REGION" \
-              --auto-scaling-group-names "$PRIMARY_ASG" \
-              --query 'AutoScalingGroups[0].DesiredCapacity' \
-              --output text)
 
-            count=$(printf '%s\n' "$instances" | awk '{print NF}')
-            if [ "$desired" = "1" ] && [ "$count" -eq 1 ] && [ "$instances" != "${{ steps.current.outputs.instance_id }}" ]; then
-              replacement_id="$instances"
+            replacement_id=""
+            for instance_id in $instance_ids; do
+              if [ "$instance_id" != "$old_instance_id" ]; then
+                replacement_id="$instance_id"
+                break
+              fi
+            done
+
+            if [ -n "$replacement_id" ]; then
               echo "Replacement instance is InService: $replacement_id"
               echo "REPLACEMENT_INSTANCE_ID=$replacement_id" >> "$GITHUB_ENV"
               exit 0
             fi
 
-            echo "Waiting for replacement: desired=$desired instances=$instances"
+            echo "Waiting for a new InService replacement: current=$old_instance_id instances=$instance_ids"
             sleep 10
           done
 
@@ -92,19 +105,24 @@ jobs:
             --output text)
 
           for attempt in {1..60}; do
-            state=$(aws elbv2 describe-target-health \
+            health=$(aws elbv2 describe-target-health \
               --region "$PRIMARY_REGION" \
               --target-group-arn "$target_group_arn" \
               --targets Id="$REPLACEMENT_INSTANCE_ID" \
-              --query 'TargetHealthDescriptions[0].TargetHealth.State' \
-              --output text)
+              --query 'TargetHealthDescriptions[0].TargetHealth' \
+              --output json)
+            state=$(printf '%s' "$health" | jq -r '.State // "not_registered"')
 
             if [ "$state" = "healthy" ]; then
               echo "Primary ALB target is healthy on $REPLACEMENT_INSTANCE_ID"
               exit 0
             fi
 
-            echo "Waiting for ALB target health: $state"
+            if [ "$state" = "draining" ]; then
+              echo "Replacement target is unexpectedly draining; waiting for registration to settle"
+            else
+              echo "Waiting for replacement ALB target health: $state details=$health"
+            fi
             sleep 10
           done
 
