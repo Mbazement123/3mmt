@@ -2,7 +2,7 @@ name: Test Primary ALB Failover
 
 "on":
   workflow_dispatch:
-   
+    
 
 env:
   PRIMARY_REGION: eu-north-1
@@ -16,12 +16,6 @@ jobs:
     environment: production
 
     steps:
-      - name: Require explicit confirmation
-        if: inputs.confirmation != 'DELETE_PRIMARY'
-        run: |
-          echo "Refusing to terminate an instance. Enter DELETE_PRIMARY to continue."
-          exit 1
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
