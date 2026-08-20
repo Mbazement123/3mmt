@@ -6,6 +6,17 @@ locals {
   primary_ami_copy_name = "${var.project_name}-dr-ami"
 }
 
+data "aws_key_pair" "primary" {
+  key_name = var.key_name
+}
+
+resource "aws_key_pair" "dr" {
+  provider = aws.dr
+
+  key_name   = var.key_name
+  public_key = data.aws_key_pair.primary.public_key
+}
+
 module "primary_network" {
   count  = var.create_primary_vpc ? 1 : 0
   source = "./modules/networking"
@@ -128,5 +139,5 @@ module "dr_asg" {
   region             = var.dr_region
   ami_id             = aws_ami_copy.dr_ami.id
   instance_type      = var.instance_type
-  key_name           = var.key_name
+  key_name           = aws_key_pair.dr.key_name
 }

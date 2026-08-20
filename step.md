@@ -44,10 +44,10 @@ Add the following repository secrets:
 
 The Terraform default key pair name is `firewall-webserver`, matching
 `firewall-webserver.pem`. Upload the contents of `firewall-webserver.pem` as
-the `VM_SSH_PRIVATE_KEY` secret. The AWS key pair named `firewall-webserver`
-must exist in both the primary and DR AWS regions because key pairs are
-regional. Set the Terraform Cloud variable `key_name` only if a different
-pair name is required.
+the `VM_SSH_PRIVATE_KEY` secret. Terraform reads the public key from the
+primary region and imports the same key pair into the DR region automatically.
+Set the Terraform Cloud variable `key_name` only if a different pair name is
+required.
 
 Add the following repository variables:
 - `MY_VPC_ID`
