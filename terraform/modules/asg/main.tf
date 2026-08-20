@@ -60,6 +60,16 @@ resource "aws_launch_template" "this" {
   instance_type = var.instance_type
   key_name      = var.key_name
 
+  block_device_mappings {
+    device_name = "/dev/sda1"
+
+    ebs {
+      volume_size           = 20
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
+
   user_data = base64encode(<<-EOT
     #!/bin/bash
     set -euo pipefail
