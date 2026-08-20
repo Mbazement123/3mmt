@@ -42,12 +42,11 @@ Add the following repository secrets:
 - `AWS_SECRET_ACCESS_KEY`
 - `VM_SSH_PRIVATE_KEY`
 
-The Terraform default key pair name is `firewall-webserver`, matching
-`firewall-webserver.pem`. Upload the contents of `firewall-webserver.pem` as
-the `VM_SSH_PRIVATE_KEY` secret. Terraform reads the public key from the
-primary region and imports the same key pair into the DR region automatically.
-Set the Terraform Cloud variable `key_name` only if a different pair name is
-required.
+Terraform creates a dedicated key pair named `biodata-deploy` in both regions.
+After the first Terraform apply, retrieve the sensitive `deploy_private_key_pem`
+output and store it as the `VM_SSH_PRIVATE_KEY` GitHub secret. Set the
+Terraform Cloud variable `key_name` only if a different dedicated pair name is
+required. Do not commit the generated private key.
 
 Add the following repository variables:
 - `MY_VPC_ID`
