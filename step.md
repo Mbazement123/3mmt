@@ -42,11 +42,11 @@ Add the following repository secrets:
 - `AWS_SECRET_ACCESS_KEY`
 - `VM_SSH_PRIVATE_KEY`
 
-Terraform creates a dedicated key pair named `biodata-deploy` in both regions.
-Store the matching private key file as the `VM_SSH_PRIVATE_KEY` GitHub secret.
-Terraform reads the existing regional key pairs and does not manage or destroy
-them. Set the Terraform Cloud variable `key_name` only if a different existing
-dedicated pair name is required. Do not commit the private key.
+The existing dedicated key pair named `biodata-deploy` is used in both regions.
+Store its matching private key file as the `VM_SSH_PRIVATE_KEY` GitHub secret.
+Terraform reads the regional key pairs and does not manage or destroy them. Set
+the Terraform Cloud variable `key_name` only if a different existing dedicated
+pair name is required. Do not commit the private key.
 
 Add the following repository variables:
 - `MY_VPC_ID`
