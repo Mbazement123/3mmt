@@ -53,13 +53,13 @@ variable "instance_type" {
 }
 
 variable "key_name" {
-  description = "EC2 key pair name for firewall-webserver.pem; it must exist in both configured regions"
+  description = "Dedicated EC2 key pair name created in both configured regions"
   type        = string
-  default     = "firewall-webserver"
+  default     = "biodata-deploy"
 
   validation {
     condition     = trimspace(var.key_name) != ""
-    error_message = "key_name must name an existing EC2 key pair in both configured regions."
+    error_message = "key_name must be a non-empty dedicated key pair name."
   }
 }
 

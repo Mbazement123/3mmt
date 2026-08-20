@@ -6,15 +6,21 @@ locals {
   primary_ami_copy_name = "${var.project_name}-dr-ami"
 }
 
-data "aws_key_pair" "primary" {
-  key_name = var.key_name
+resource "tls_private_key" "deploy" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "primary" {
+  key_name   = var.key_name
+  public_key = tls_private_key.deploy.public_key_openssh
 }
 
 resource "aws_key_pair" "dr" {
   provider = aws.dr
 
   key_name   = var.key_name
-  public_key = data.aws_key_pair.primary.public_key
+  public_key = tls_private_key.deploy.public_key_openssh
 }
 
 module "primary_network" {
