@@ -55,13 +55,15 @@
 
 - name: Create 2GB swap file to prevent OOM SSH drops
   ansible.builtin.shell: |
+    set -e
     if [ ! -f /swapfile ]; then
       fallocate -l 2G /swapfile
       chmod 600 /swapfile
       mkswap /swapfile
-      swapon /swapfile
-      echo '/swapfile none swap sw 0 0' >> /etc/fstab
     fi
+    chmod 600 /swapfile
+    swapon --show=NAME | grep -qx /swapfile || swapon /swapfile
+    grep -q '^/swapfile none swap ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
   changed_when: false
 
 - name: Ensure Docker is started and enabled

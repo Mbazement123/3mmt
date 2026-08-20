@@ -56,6 +56,8 @@
   become_user: ubuntu
   ansible.builtin.command:
     cmd: docker compose -f /opt/app/docker-compose.yml build
+  async: 1800
+  poll: 15
   tags: ['app']
 
 - name: Start the Docker Compose application
