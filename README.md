@@ -14,37 +14,8 @@ Balancer, an Auto Scaling Group, EC2 application instances, and an encrypted EFS
 filesystem. AWS Backup protects each regional EFS filesystem with a daily backup
 plan and 35-day retention by default.
 
-```text
-                         +----------------------+
-                         |       End user       |
-                         +----------+-----------+
-                                    |
-                                    v
-                    +-------------------------------+
-                    |    AWS Global Accelerator    |
-                    |  static IPs + health checks  |
-                    +---------------+---------------+
-                                    |
-                +-------------------+-------------------+
-                |                                       |
-       healthy primary endpoint                 secondary endpoint
-                |                                       |
-                v                                       v
-      +---------------------+                 +---------------------+
-      | Primary ALB         |                 | Secondary ALB       |
-      | eu-north-1          |                 | us-west-2           |
-      +----------+----------+                 +----------+----------+
-                 |                                       |
-                 v                                       v
-      +---------------------+                 +---------------------+
-      | Primary ASG / EC2   |                 | Secondary ASG / EC2 |
-      | Docker application  |                 | Docker application   |
-      +----------+----------+                 +----------+----------+
-                 |                                       |
-                 v                                       v
-            Primary EFS                         Secondary EFS
-            + AWS Backup                        + AWS Backup
-```
+![Architecture Diagram](Architecture%20Diagram.jpg)
+
 
 Global Accelerator has TCP listeners on ports `80` and `443`. TLS termination,
 when configured, remains the responsibility of the ALB. Endpoint groups use
