@@ -18,6 +18,16 @@ output "dr_alb_dns_name" {
   value       = module.dr_alb.alb_dns_name
 }
 
+output "global_accelerator_dns_name" {
+  description = "DNS name of the Global Accelerator"
+  value       = module.global_accelerator.dns_name
+}
+
+output "global_accelerator_ip_addresses" {
+  description = "Static IPv4 addresses assigned to the Global Accelerator"
+  value       = module.global_accelerator.ip_addresses
+}
+
 output "primary_efs_id" {
   description = "Primary EFS file system ID"
   value       = module.primary_efs.file_system_id
@@ -26,6 +36,16 @@ output "primary_efs_id" {
 output "dr_efs_id" {
   description = "DR EFS file system ID"
   value       = module.dr_efs.file_system_id
+}
+
+output "primary_efs_backup_vault" {
+  description = "AWS Backup vault for the primary EFS file system"
+  value       = module.primary_efs_backup.vault_name
+}
+
+output "dr_efs_backup_vault" {
+  description = "AWS Backup vault for the DR EFS file system"
+  value       = module.dr_efs_backup.vault_name
 }
 
 output "primary_asg_name" {
