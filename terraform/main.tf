@@ -111,9 +111,6 @@ module "primary_asg" {
   ami_id             = var.app_ami_id
   instance_type      = var.instance_type
   key_name           = var.key_name
-  min_size           = 1
-  max_size           = 1
-  desired_capacity   = 1
 }
 
 module "dr_asg" {
@@ -132,7 +129,4 @@ module "dr_asg" {
   ami_id             = aws_ami_copy.dr_ami.id
   instance_type      = var.instance_type
   key_name           = var.key_name
-  min_size           = 1
-  max_size           = 1
-  desired_capacity   = 1
 }
