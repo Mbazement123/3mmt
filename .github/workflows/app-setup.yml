@@ -42,6 +42,18 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.VM_SSH_PRIVATE_KEY}}
 
+      - name: Suspend ASG health replacement during deployment
+        run: |
+          set -euo pipefail
+          aws autoscaling suspend-processes \
+            --region "$PRIMARY_REGION" \
+            --auto-scaling-group-name "$PRIMARY_ASG" \
+            --scaling-processes HealthCheck ReplaceUnhealthy
+          aws autoscaling suspend-processes \
+            --region "$DR_REGION" \
+            --auto-scaling-group-name "$DR_ASG" \
+            --scaling-processes HealthCheck ReplaceUnhealthy
+
       - name: Trust EC2 host key
         run: |
           set -euo pipefail
@@ -177,3 +189,16 @@ jobs:
             fi
             sleep 10
           done
+
+      - name: Resume ASG health replacement after deployment
+        if: always()
+        run: |
+          set -euo pipefail
+          aws autoscaling resume-processes \
+            --region "$PRIMARY_REGION" \
+            --auto-scaling-group-name "$PRIMARY_ASG" \
+            --scaling-processes HealthCheck ReplaceUnhealthy
+          aws autoscaling resume-processes \
+            --region "$DR_REGION" \
+            --auto-scaling-group-name "$DR_ASG" \
+            --scaling-processes HealthCheck ReplaceUnhealthy

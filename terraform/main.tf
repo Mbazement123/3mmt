@@ -15,24 +15,14 @@ resource "tls_private_key" "deploy" {
   }
 }
 
-resource "aws_key_pair" "primary" {
-  key_name   = var.key_name
-  public_key = tls_private_key.deploy.public_key_openssh
-
-  lifecycle {
-    prevent_destroy = true
-  }
+data "aws_key_pair" "primary" {
+  key_name = var.key_name
 }
 
-resource "aws_key_pair" "dr" {
+data "aws_key_pair" "dr" {
   provider = aws.dr
 
-  key_name   = var.key_name
-  public_key = tls_private_key.deploy.public_key_openssh
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  key_name = var.key_name
 }
 
 module "primary_network" {
