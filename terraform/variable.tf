@@ -49,7 +49,7 @@ variable "dr_azs" {
 variable "app_ami_id" {
   description = "Custom AMI ID in the primary region for the ASG launch template"
   type        = string
-  default     = "ami-0f2bc09f6cdee7d35"
+  default     = "ami-0caabf58683a826ad"
 }
 
 variable "instance_type" {
