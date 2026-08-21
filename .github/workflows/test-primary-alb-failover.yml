@@ -2,12 +2,7 @@ name: Test Primary ALB Failover
 
 "on":
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: Type DELETE_PRIMARY to terminate the current primary ASG instance
-        required: true
-        type: string
-
+   
 env:
   PRIMARY_REGION: eu-north-1
   PRIMARY_ASG: biodata-primary-asg
@@ -20,12 +15,6 @@ jobs:
     environment: production
 
     steps:
-      - name: Require explicit confirmation
-        if: inputs.confirmation != 'DELETE_PRIMARY'
-        run: |
-          echo "Refusing to terminate an instance. Enter DELETE_PRIMARY to continue."
-          exit 1
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
