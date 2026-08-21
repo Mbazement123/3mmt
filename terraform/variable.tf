@@ -72,8 +72,7 @@ variable "key_name" {
 variable "alert_email" {
   description = "Optional email address for CloudWatch alerts"
   type        = string
-  default     = null
-  nullable    = true
+  default     = "eohoimiracle@gmail.com"
 }
 
 variable "target_port" {
